@@ -382,6 +382,19 @@ function SearchPage() {
     setScans([])
   }
 
+  const openScanWorkflow = (scan) => {
+    const scanType = getValue(scan, ['scan_type'])
+    if (normalize(scanType) !== normalize('Fetal Echo')) {
+      setStatusMessage(`${scanType || 'This scan'} workflow is not available yet.`)
+      return
+    }
+
+    const query = new URLSearchParams()
+    if (selectedPatient?.id) query.set('patientId', selectedPatient.id)
+    const path = scan?.id ? `/fetal-echo-report/${scan.id}` : '/fetal-echo-report'
+    navigate(`${path}${query.toString() ? `?${query.toString()}` : ''}`)
+  }
+
   return (
     <>
           {isQuickSearchOpen && (
@@ -659,7 +672,12 @@ function SearchPage() {
                       </thead>
                       <tbody>
                         {scans.map((scan, index) => (
-                          <tr key={scan.id || index} className={index === 0 ? 'selected-row' : undefined}>
+                          <tr
+                            key={scan.id || index}
+                            onDoubleClick={() => openScanWorkflow(scan)}
+                            title={normalize(getValue(scan, ['scan_type'])) === normalize('Fetal Echo') ? 'Double-click to open fetal echo report' : undefined}
+                            className={index === 0 ? 'selected-row' : undefined}
+                          >
                             <td>{getValue(scan, ['scan_type'], '-')}</td>
                             <td>{getValue(scan, ['report_title', 'indicator', 'tag'], '-')}</td>
                           </tr>

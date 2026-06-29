@@ -31,6 +31,13 @@ def init_db():
     # Referral doctors collection
     sync_db.referral_doctors.create_index("first_name")
     sync_db.referral_doctors.create_index("last_name")
+
+    # Lookup options collection
+    sync_db.lookup_options.create_index(
+        [("category", 1), ("normalized_value", 1)],
+        unique=True,
+        name="lookup_category_normalized_value",
+    )
     
     # Scans collection
     sync_db.scans.create_index("patient_id")

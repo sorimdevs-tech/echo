@@ -35,4 +35,14 @@ export const patientService = {
     const response = await api.post(`/patients/${patientId}/visits`, visitData);
     return response.data;
   },
+
+  updateVisit: async (visitId, visitData) => {
+    const response = await api.put(`/visits/${visitId}`, visitData);
+    return response.data;
+  },
+
+  deleteVisit: async (visitId) => {
+    const response = await api.delete(`/visits/${visitId}`);
+    return response.data;
+  },
 };

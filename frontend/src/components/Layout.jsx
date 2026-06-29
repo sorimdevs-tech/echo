@@ -3,9 +3,7 @@ import {
   Activity,
   CalendarDays,
   Pencil,
-  Power,
   RefreshCw,
-  RotateCcw,
   Search as SearchIcon,
   UserPlus,
 } from 'lucide-react'
@@ -63,13 +61,29 @@ function Layout({ children }) {
               <UserPlus className="h-4 w-4" />
               <span className={location.pathname === '/new-patient' ? 'font-semibold' : ''}>New patient</span>
             </button>
-            <button type="button" className="toolbar-button">
+            <button
+              type="button"
+              onClick={() => navigate('/edit-patient')}
+              className={`toolbar-button ${
+                location.pathname.startsWith('/edit-patient')
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'hover:border-teal-300 hover:bg-teal-50'
+              }`}
+            >
               <Pencil className="h-4 w-4" />
-              <span>Edit patient</span>
+              <span className={location.pathname.startsWith('/edit-patient') ? 'font-semibold' : ''}>Edit patient</span>
             </button>
-            <button type="button" className="toolbar-button">
+            <button
+              type="button"
+              onClick={() => navigate('/visits')}
+              className={`toolbar-button ${
+                location.pathname === '/visits'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'hover:border-teal-300 hover:bg-teal-50'
+              }`}
+            >
               <CalendarDays className="h-4 w-4" />
-              <span>Visits</span>
+              <span className={location.pathname === '/visits' ? 'font-semibold' : ''}>Visits</span>
             </button>
             <button type="button" onClick={handleRefresh} className="toolbar-button">
               <RefreshCw className="h-4 w-4" />
