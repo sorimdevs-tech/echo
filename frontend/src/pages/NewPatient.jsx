@@ -403,14 +403,21 @@ function NewPatient({ mode = 'new', patientId = '' }) {
   }
 
   const openScanWorkflow = (scanType = selectedScans[0]) => {
-    if (scanType !== 'Fetal Echo') {
+    const scanRoutes = {
+      'Adult Echo': '/adult-echo-report',
+      'Fetal Echo': '/fetal-echo-report',
+      'Pediatric Echo': '/pediatric-echo-report',
+    }
+    const route = scanRoutes[scanType]
+
+    if (!route) {
       setSubmitError(`${scanType || 'This scan'} workflow is not available yet.`)
       return
     }
 
     const query = new URLSearchParams()
     if (selectedPatientId) query.set('patientId', selectedPatientId)
-    navigate(`/fetal-echo-report${query.toString() ? `?${query.toString()}` : ''}`)
+    navigate(`${route}${query.toString() ? `?${query.toString()}` : ''}`)
   }
 
   const inputClass = "w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
@@ -1114,7 +1121,7 @@ function NewPatient({ mode = 'new', patientId = '' }) {
                     <label
                       key={scanType}
                       onDoubleClick={() => openScanWorkflow(scanType)}
-                      title={scanType === 'Fetal Echo' ? 'Double-click to open fetal echo report' : undefined}
+                      title={['Adult Echo', 'Fetal Echo', 'Pediatric Echo'].includes(scanType) ? `Double-click to open ${scanType.toLowerCase()} report` : undefined}
                       className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50 cursor-pointer transition group"
                     >
                       <input
@@ -1153,7 +1160,7 @@ function NewPatient({ mode = 'new', patientId = '' }) {
                 <div className="pt-4 border-t border-slate-200">
                   <button
                     type="button"
-                    onClick={() => openScanWorkflow(selectedScans.includes('Fetal Echo') ? 'Fetal Echo' : selectedScans[0])}
+                    onClick={() => openScanWorkflow(selectedScans.includes('Adult Echo') ? 'Adult Echo' : selectedScans.includes('Fetal Echo') ? 'Fetal Echo' : selectedScans.includes('Pediatric Echo') ? 'Pediatric Echo' : selectedScans[0])}
                     className="w-full px-4 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition flex items-center justify-center gap-2 font-medium shadow-sm"
                   >
                     <Activity className="w-4 h-4" />

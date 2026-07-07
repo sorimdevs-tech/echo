@@ -382,17 +382,54 @@ function SearchPage() {
     setScans([])
   }
 
-  const openScanWorkflow = (scan) => {
+  const scanRoutes = {
+    [normalize('Adult Echo')]: 'adult-echo-report',
+    [normalize('Fetal Echo')]: 'fetal-echo-report',
+    [normalize('Pediatric Echo')]: 'pediatric-echo-report',
+  }
+
+  const getScanRoute = (scanType) => scanRoutes[normalize(scanType)]
+
+  const getPatientScans = (patient, scanList = allScans) => {
+    const lookupIds = patientLookupIds(patient)
+
+    return scanList.filter((scan) => {
+      const scanPatientId = normalizeId(getValue(scan, ['patient_id', 'patientId', 'patient']))
+      return lookupIds.includes(scanPatientId)
+    })
+  }
+
+  const openScanWorkflow = (scan, patient = selectedPatient) => {
     const scanType = getValue(scan, ['scan_type'])
-    if (normalize(scanType) !== normalize('Fetal Echo')) {
+    const route = getScanRoute(scanType)
+
+    if (!route) {
       setStatusMessage(`${scanType || 'This scan'} workflow is not available yet.`)
       return
     }
 
     const query = new URLSearchParams()
-    if (selectedPatient?.id) query.set('patientId', selectedPatient.id)
-    const path = scan?.id ? `/fetal-echo-report/${scan.id}` : '/fetal-echo-report'
+    if (patient?.id) query.set('patientId', patient.id)
+    const path = scan?.id ? `/${route}/${scan.id}` : `/${route}`
     navigate(`${path}${query.toString() ? `?${query.toString()}` : ''}`)
+  }
+
+  const openPatientWorkflow = (patient) => {
+    const patientScans = getPatientScans(patient)
+    const preferredType = getScanRoute(searchForm.scan_type) ? searchForm.scan_type : 'Fetal Echo'
+    const preferredScan =
+      patientScans.find((scan) => normalize(getValue(scan, ['scan_type'])) === normalize(preferredType)) ||
+      patientScans.find((scan) => normalize(getValue(scan, ['scan_type'])) === normalize('Fetal Echo')) ||
+      patientScans.find((scan) => getScanRoute(getValue(scan, ['scan_type'])))
+
+    if (preferredScan) {
+      openScanWorkflow(preferredScan, patient)
+      return
+    }
+
+    const query = new URLSearchParams()
+    if (patient?.id) query.set('patientId', patient.id)
+    navigate(`/fetal-echo-report${query.toString() ? `?${query.toString()}` : ''}`)
   }
 
   return (
@@ -577,6 +614,8 @@ function SearchPage() {
                           <tr
                             key={patient.id}
                             onClick={() => selectPatient(patient)}
+                            onDoubleClick={() => openPatientWorkflow(patient)}
+                            title="Double-click to open the patient's fetal echo report"
                             className={isSelected ? 'selected-row' : undefined}
                           >
                             <td>
@@ -675,7 +714,7 @@ function SearchPage() {
                           <tr
                             key={scan.id || index}
                             onDoubleClick={() => openScanWorkflow(scan)}
-                            title={normalize(getValue(scan, ['scan_type'])) === normalize('Fetal Echo') ? 'Double-click to open fetal echo report' : undefined}
+                            title={['adult echo', 'fetal echo', 'pediatric echo'].includes(normalize(getValue(scan, ['scan_type']))) ? `Double-click to open ${getValue(scan, ['scan_type']).toLowerCase()} report` : undefined}
                             className={index === 0 ? 'selected-row' : undefined}
                           >
                             <td>{getValue(scan, ['scan_type'], '-')}</td>

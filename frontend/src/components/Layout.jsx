@@ -2,9 +2,11 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Activity,
   CalendarDays,
+  Home,
   Pencil,
   RefreshCw,
   Search as SearchIcon,
+  Settings as SettingsIcon,
   UserPlus,
 } from 'lucide-react'
 
@@ -22,6 +24,12 @@ function Layout({ children }) {
     setTimeout(() => window.location.reload(), 100)
   }
 
+  const pageTitle = location.pathname.startsWith('/settings')
+    ? 'Settings'
+    : location.pathname.startsWith('/search-query')
+      ? 'Search Query'
+      : 'Patient Demography'
+
   return (
     <div className="h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
       <div className="flex h-full w-full flex-col px-1 py-1 sm:px-2 lg:px-3">
@@ -32,22 +40,46 @@ function Layout({ children }) {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">EchoScan</p>
-              <h1 className="text-2xl font-semibold tracking-normal text-slate-950">Patient Demography</h1>
+              <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={() => navigate('/')}
+              className={`toolbar-button ${
+                location.pathname === '/'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'hover:border-teal-300 hover:bg-teal-50'
+              }`}
+            >
+              <Home className="h-4 w-4" />
+              <span className={location.pathname === '/' ? 'font-semibold' : ''}>Home</span>
+            </button>
+            <button
+              type="button"
               onClick={handleSearch}
               className={`toolbar-button ${
-                location.pathname === '/search' || location.pathname === '/'
+                location.pathname === '/search'
                   ? 'bg-teal-600 text-white shadow-sm'
                   : 'hover:border-teal-300 hover:bg-teal-50'
               }`}
             >
               <SearchIcon className="h-4 w-4" />
-              <span className={location.pathname === '/search' || location.pathname === '/' ? 'font-semibold' : ''}>Search</span>
+              <span className={location.pathname === '/search' ? 'font-semibold' : ''}>Search</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/settings')}
+              className={`toolbar-button ${
+                location.pathname.startsWith('/settings')
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'hover:border-teal-300 hover:bg-teal-50'
+              }`}
+            >
+              <SettingsIcon className="h-4 w-4" />
+              <span className={location.pathname.startsWith('/settings') ? 'font-semibold' : ''}>Settings</span>
             </button>
             <button
               type="button"

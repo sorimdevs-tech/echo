@@ -10,7 +10,7 @@
 
   body {
     font-family: 'Inter', sans-serif;
-    background: #f5f7fb;
+    background: #f8fafc;
   }
 }
 
@@ -89,5 +89,10 @@
   }
   .legacy-plus-button {
     @apply inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-teal-100 bg-teal-100 text-lg font-semibold text-teal-800 transition hover:bg-teal-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2;
+  }
+
+  .settings-shell input[type='checkbox'],
+  .settings-shell input[type='radio'] {
+    accent-color: #0d9488;
   }
 }
