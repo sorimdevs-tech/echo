@@ -17,13 +17,19 @@ import CRM from './pages/CRM'
 import Analytics from './pages/Analytics'
 import Administration from './pages/Administration'
 import Settings from './pages/Settings'
+import AdultEchoReport from './pages/AdultEchoReport'
+import FetalEchoReport from './pages/FetalEchoReport'
+import PediatricEchoReport from './pages/PediatricEchoReport'
+import SearchQuery from './pages/SearchQuery'
+import EditReferralDoctor from './pages/EditReferralDoctor'
+import Home from './pages/Home'
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={
-          <Layout><Dashboard /></Layout>
+          <Home />
         } />
         <Route path="/dashboard" element={
           <Layout><Dashboard /></Layout>
@@ -51,6 +57,30 @@ function App() {
         } />
         <Route path="/referral-doctors/new" element={
           <Layout><NewReferralDoctor /></Layout>
+        } />
+        <Route path="/referral-doctors/edit/:id" element={
+          <Layout><EditReferralDoctor /></Layout>
+        } />
+        <Route path="/search-query" element={
+          <Layout><SearchQuery /></Layout>
+        } />
+        <Route path="/adult-echo-report" element={
+          <Layout><AdultEchoReport /></Layout>
+        } />
+        <Route path="/adult-echo-report/:scanId" element={
+          <Layout><AdultEchoReport /></Layout>
+        } />
+        <Route path="/fetal-echo-report" element={
+          <Layout><FetalEchoReport /></Layout>
+        } />
+        <Route path="/fetal-echo-report/:scanId" element={
+          <Layout><FetalEchoReport /></Layout>
+        } />
+        <Route path="/pediatric-echo-report" element={
+          <Layout><PediatricEchoReport /></Layout>
+        } />
+        <Route path="/pediatric-echo-report/:scanId" element={
+          <Layout><PediatricEchoReport /></Layout>
         } />
         <Route path="/echo-studies" element={
           <Layout><EchoScan /></Layout>

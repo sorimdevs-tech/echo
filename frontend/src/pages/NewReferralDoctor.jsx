@@ -69,6 +69,7 @@ export function ReferralDoctorForm({
   onCancel,
   submitLabel = 'Save',
   cancelLabel = 'Close',
+  initialDoctor = null,
 }) {
   const [formData, setFormData] = useState(initialReferralDoctorForm)
   const [referralDoctors, setReferralDoctors] = useState([])
@@ -109,6 +110,17 @@ export function ReferralDoctorForm({
   useEffect(() => {
     fetchReferralDoctors()
   }, [])
+
+  useEffect(() => {
+    if (!initialDoctor) return
+
+    setSelectedReferralDoctorId(initialDoctor.id || '')
+    setFormData({
+      ...initialReferralDoctorForm,
+      ...initialDoctor,
+      doctor_type: initialDoctor.doctor_type || 'doctor',
+    })
+  }, [initialDoctor])
 
   useEffect(() => {
     const fetchLookupOptions = async () => {

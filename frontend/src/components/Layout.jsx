@@ -1,13 +1,15 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import Sidebar from './Sidebar'
 import {
   Activity,
   CalendarDays,
+  FileSearch,
+  Image as ImageIcon,
   Pencil,
   Power,
   RefreshCw,
   RotateCcw,
   Search as SearchIcon,
+  Settings as SettingsIcon,
   UserPlus,
 } from 'lucide-react'
 
@@ -27,7 +29,6 @@ function Layout({ children }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
-      <Sidebar />
       <div className="flex h-full w-full flex-col px-1 py-1 sm:px-2 lg:px-3">
         <header className="mb-3 flex shrink-0 flex-col gap-3 border-b border-slate-200 pb-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
@@ -68,6 +69,42 @@ function Layout({ children }) {
             <button type="button" className="toolbar-button" onClick={() => navigate('/patients')}>
               <Pencil className="h-4 w-4" />
               <span>Edit patient</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/images')}
+              className={`toolbar-button ${
+                location.pathname === '/images'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'hover:border-teal-300 hover:bg-teal-50'
+              }`}
+            >
+              <ImageIcon className="h-4 w-4" />
+              <span className={location.pathname === '/images' ? 'font-semibold' : ''}>Images</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/search-query')}
+              className={`toolbar-button ${
+                location.pathname === '/search-query'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'hover:border-teal-300 hover:bg-teal-50'
+              }`}
+            >
+              <FileSearch className="h-4 w-4" />
+              <span className={location.pathname === '/search-query' ? 'font-semibold' : ''}>Search Query</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/settings')}
+              className={`toolbar-button ${
+                location.pathname === '/settings'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'hover:border-teal-300 hover:bg-teal-50'
+              }`}
+            >
+              <SettingsIcon className="h-4 w-4" />
+              <span className={location.pathname === '/settings' ? 'font-semibold' : ''}>Settings</span>
             </button>
             <button type="button" className="toolbar-button" onClick={() => navigate('/visits')}>
               <CalendarDays className="h-4 w-4" />
