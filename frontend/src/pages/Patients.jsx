@@ -142,7 +142,7 @@ function Patients() {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
                         <Link
-                          to={`/patients/edit/${patient.id}`}
+                          to={`/patients/${patient.id}/edit`}
                           className="text-primary-600 hover:text-primary-900 p-1"
                         >
                           <Edit className="w-4 h-4" />

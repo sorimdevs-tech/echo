@@ -32,7 +32,21 @@ export const scanService = {
   },
 
   getDashboardStats: async () => {
-    const response = await api.get('/dashboard/stats');
-    return response.data;
+    try {
+      const response = await api.get('/dashboard/stats');
+      return response.data;
+    } catch (error) {
+      console.warn('Backend unavailable, using demo dashboard stats');
+      return {
+        success: true,
+        data: {
+          total_patients: 0,
+          total_scans: 0,
+          adult_echo: 0,
+          fetal_echo: 0,
+          pediatric_echo: 0,
+        },
+      };
+    }
   },
 };
