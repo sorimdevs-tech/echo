@@ -47,6 +47,20 @@ def init_db():
     # Report templates collection
     sync_db.report_templates.create_index("scan_type")
 
+    # Full reporting, application configuration, and reusable resources
+    sync_db.clinical_reports.create_index("patient_id")
+    sync_db.clinical_reports.create_index("visit_id")
+    sync_db.clinical_reports.create_index("scan_type")
+    sync_db.clinical_reports.create_index("updated_at")
+    sync_db.settings.create_index("key", unique=True)
+    sync_db.users.create_index("user_name", unique=True, sparse=True)
+    sync_db.saved_queries.create_index("name")
+    sync_db.media_records.create_index("patient_id")
+    sync_db.media_records.create_index("visit_id")
+
+    # User-managed values for configurable select controls
+    sync_db.custom_options.create_index([("field", 1), ("value_key", 1)], unique=True)
+
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully!")

@@ -1,53 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ReferralDoctorForm } from './NewReferralDoctor'
+import { Save } from 'lucide-react'
+import { FieldGrid, Workspace } from '../components/WorkspaceUI'
 import { referralDoctorService } from '../api/referralDoctorService'
-
-function EditReferralDoctor() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const [doctor, setDoctor] = useState(null)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let active = true
-
-    const loadDoctor = async () => {
-      try {
-        const result = await referralDoctorService.getReferralDoctor(id)
-        if (active) setDoctor(result.data)
-      } catch (requestError) {
-        console.error('Error loading referral doctor:', requestError)
-        if (active) setError('Could not load this referral doctor.')
-      }
-    }
-
-    if (id) loadDoctor()
-    return () => { active = false }
-  }, [id])
-
-  return (
-    <div className="mx-auto w-full max-w-6xl overflow-auto">
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 px-6 py-4">
-          <h1 className="text-2xl font-bold text-gray-800">Edit Referral Doctor</h1>
-          <p className="mt-1 text-sm text-gray-600">Update a referral doctor or hospital</p>
-        </div>
-        <div className="p-6">
-          {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-          {!error && !doctor && <div className="text-sm text-slate-500">Loading referral doctor...</div>}
-          {doctor && (
-            <ReferralDoctorForm
-              initialDoctor={doctor}
-              onCancel={() => navigate('/referral-doctors')}
-              cancelLabel="Cancel"
-              submitLabel="Update"
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export default EditReferralDoctor
+const fields=[{key:'doctor_type',label:'Type',type:'select',options:['doctor','hospital']},{key:'salutation',label:'Salutation'},{key:'first_name',label:'First name'},{key:'middle_name',label:'Middle name'},{key:'last_name',label:'Last name'},{key:'reg_no',label:'Registration number'},{key:'speciality',label:'Speciality',type:'select',addable:true,options:['Obstetrician & Gynecologist','Cardiologist','Pediatrician','Neurologist','General Physician']},{key:'qualification',label:'Qualification'},{key:'designation',label:'Designation'},{key:'institution_name',label:'Institution / hospital',type:'select',addable:true,options:[]},{key:'street',label:'Street'},{key:'area',label:'Area'},{key:'district_city',label:'City',type:'select',addable:true,options:[]},{key:'state',label:'State',type:'select',addable:true,options:['Karnataka','Maharashtra','Tamil Nadu','Kerala']},{key:'country',label:'Country',type:'select',addable:true,options:['India','USA','UK']},{key:'phone1',label:'Phone'},{key:'mobile',label:'Mobile'},{key:'email',label:'Email',type:'email'}]
+export default function EditReferralDoctor(){const {id}=useParams();const nav=useNavigate();const [data,setData]=useState({});const [loading,setLoading]=useState(true);useEffect(()=>{referralDoctorService.getReferralDoctor(id).then(r=>setData(r.data||{})).catch(()=>nav('/referral-doctors')).finally(()=>setLoading(false))},[id,nav]);const save=async()=>{await referralDoctorService.updateReferralDoctor(id,data);nav('/referral-doctors')};return <Workspace title="Edit referral doctor" description="Update doctor or hospital referral details." actions={<button className="primary-button" onClick={save}><Save className="h-4 w-4"/>Save</button>}>{loading?<p className="text-sm text-slate-500">Loading referral record…</p>:<FieldGrid fields={fields} data={data} setData={setData}/>}</Workspace>}

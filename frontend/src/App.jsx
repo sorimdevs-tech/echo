@@ -8,7 +8,8 @@ import EditPatient from './pages/EditPatient'
 import Visits from './pages/Visits'
 import ReferralDoctors from './pages/ReferralDoctors'
 import NewReferralDoctor from './pages/NewReferralDoctor'
-import EchoScan from './pages/EchoScan'
+import EditReferralDoctor from './pages/EditReferralDoctor'
+import ClinicalWorkspace from './pages/ClinicalWorkspace'
 import ImagesViewer from './pages/ImagesViewer'
 import Measurements from './pages/Measurements'
 import AIAssistant from './pages/AIAssistant'
@@ -17,20 +18,13 @@ import CRM from './pages/CRM'
 import Analytics from './pages/Analytics'
 import Administration from './pages/Administration'
 import Settings from './pages/Settings'
-import AdultEchoReport from './pages/AdultEchoReport'
-import FetalEchoReport from './pages/FetalEchoReport'
-import PediatricEchoReport from './pages/PediatricEchoReport'
-import SearchQuery from './pages/SearchQuery'
-import EditReferralDoctor from './pages/EditReferralDoctor'
-import Home from './pages/Home'
+import Landing from './pages/Landing'
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={
-          <Home />
-        } />
+        <Route path="/" element={<Landing />} />
         <Route path="/dashboard" element={
           <Layout><Dashboard /></Layout>
         } />
@@ -61,29 +55,8 @@ function App() {
         <Route path="/referral-doctors/edit/:id" element={
           <Layout><EditReferralDoctor /></Layout>
         } />
-        <Route path="/search-query" element={
-          <Layout><SearchQuery /></Layout>
-        } />
-        <Route path="/adult-echo-report" element={
-          <Layout><AdultEchoReport /></Layout>
-        } />
-        <Route path="/adult-echo-report/:scanId" element={
-          <Layout><AdultEchoReport /></Layout>
-        } />
-        <Route path="/fetal-echo-report" element={
-          <Layout><FetalEchoReport /></Layout>
-        } />
-        <Route path="/fetal-echo-report/:scanId" element={
-          <Layout><FetalEchoReport /></Layout>
-        } />
-        <Route path="/pediatric-echo-report" element={
-          <Layout><PediatricEchoReport /></Layout>
-        } />
-        <Route path="/pediatric-echo-report/:scanId" element={
-          <Layout><PediatricEchoReport /></Layout>
-        } />
         <Route path="/echo-studies" element={
-          <Layout><EchoScan /></Layout>
+          <Layout><ClinicalWorkspace initialType="Adult Echo" /></Layout>
         } />
         <Route path="/images" element={
           <Layout><ImagesViewer /></Layout>

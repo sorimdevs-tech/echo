@@ -1,21 +1,27 @@
 import { useNavigate, useLocation } from 'react-router-dom'
+import Sidebar from './Sidebar'
 import {
   Activity,
   CalendarDays,
-  FileSearch,
-  Image as ImageIcon,
   Pencil,
   Power,
   RefreshCw,
   RotateCcw,
   Search as SearchIcon,
-  Settings as SettingsIcon,
   UserPlus,
 } from 'lucide-react'
 
 function Layout({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const pageTitles = {
+    '/': 'Dashboard', '/dashboard': 'Dashboard', '/search': 'Patient Search', '/patients': 'Patients',
+    '/patients/new': 'New Patient', '/visits': 'Visits', '/referral-doctors': 'Referral Doctors',
+    '/echo-studies': 'Echo Studies', '/images': 'Images & DICOM', '/measurements': 'Measurements',
+    '/reports': 'Clinical Reports', '/analytics': 'Queries & Analytics', '/settings': 'Settings',
+    '/administration': 'Administration', '/crm': 'CRM', '/ai-assistant': 'AI Assistant',
+  }
+  const pageTitle = Object.entries(pageTitles).find(([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`))?.[1] || 'CardioEcho AI'
 
   const handleSearch = (e) => {
     e?.preventDefault()
@@ -29,7 +35,8 @@ function Layout({ children }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
-      <div className="flex h-full w-full flex-col px-1 py-1 sm:px-2 lg:px-3">
+      <Sidebar />
+      <div className="flex h-full min-w-0 flex-1 flex-col px-1 py-1 sm:px-2 lg:px-3">
         <header className="mb-3 flex shrink-0 flex-col gap-3 border-b border-slate-200 pb-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-white shadow-sm">
@@ -37,7 +44,7 @@ function Layout({ children }) {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">EchoScan</p>
-              <h1 className="text-2xl font-semibold tracking-normal text-slate-950">Patient Demography</h1>
+              <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
             </div>
           </div>
 
@@ -46,13 +53,13 @@ function Layout({ children }) {
               type="button"
               onClick={handleSearch}
               className={`toolbar-button ${
-                location.pathname === '/search' || location.pathname === '/'
+                location.pathname === '/search'
                   ? 'bg-teal-600 text-white shadow-sm'
                   : 'hover:border-teal-300 hover:bg-teal-50'
               }`}
             >
               <SearchIcon className="h-4 w-4" />
-              <span className={location.pathname === '/search' || location.pathname === '/' ? 'font-semibold' : ''}>Search</span>
+              <span className={location.pathname === '/search' ? 'font-semibold' : ''}>Search</span>
             </button>
             <button
               type="button"
@@ -70,42 +77,6 @@ function Layout({ children }) {
               <Pencil className="h-4 w-4" />
               <span>Edit patient</span>
             </button>
-            <button
-              type="button"
-              onClick={() => navigate('/images')}
-              className={`toolbar-button ${
-                location.pathname === '/images'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'hover:border-teal-300 hover:bg-teal-50'
-              }`}
-            >
-              <ImageIcon className="h-4 w-4" />
-              <span className={location.pathname === '/images' ? 'font-semibold' : ''}>Images</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/search-query')}
-              className={`toolbar-button ${
-                location.pathname === '/search-query'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'hover:border-teal-300 hover:bg-teal-50'
-              }`}
-            >
-              <FileSearch className="h-4 w-4" />
-              <span className={location.pathname === '/search-query' ? 'font-semibold' : ''}>Search Query</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/settings')}
-              className={`toolbar-button ${
-                location.pathname === '/settings'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'hover:border-teal-300 hover:bg-teal-50'
-              }`}
-            >
-              <SettingsIcon className="h-4 w-4" />
-              <span className={location.pathname === '/settings' ? 'font-semibold' : ''}>Settings</span>
-            </button>
             <button type="button" className="toolbar-button" onClick={() => navigate('/visits')}>
               <CalendarDays className="h-4 w-4" />
               <span>Visits</span>
@@ -117,7 +88,7 @@ function Layout({ children }) {
           </div>
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col gap-3">
+        <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto pb-3">
           {children}
         </main>
       </div>

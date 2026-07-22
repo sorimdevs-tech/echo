@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Trash2, Edit, Stethoscope, UserPlus } from 'lucide-react'
 import { referralDoctorService } from '../api/referralDoctorService'
+import ReferralDoctorModal from '../components/ReferralDoctorModal'
 
 function ReferralDoctors() {
   const [doctors, setDoctors] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [isReferralModalOpen, setIsReferralModalOpen] = useState(false)
 
   useEffect(() => {
     fetchDoctors()
@@ -59,10 +61,10 @@ function ReferralDoctors() {
           <h1 className="text-2xl font-bold text-gray-800">Referral Doctors</h1>
           <p className="text-sm text-gray-600 mt-1">Manage referral doctor records</p>
         </div>
-        <Link to="/referral-doctors/new" className="btn-primary flex items-center space-x-2">
+        <button type="button" onDoubleClick={() => setIsReferralModalOpen(true)} title="Double-click to manage referral doctors and hospitals" className="btn-primary flex items-center space-x-2">
           <UserPlus className="w-4 h-4" />
           <span>New Referral Doctor</span>
-        </Link>
+        </button>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -172,6 +174,7 @@ function ReferralDoctors() {
           </div>
         )}
       </div>
+      <ReferralDoctorModal open={isReferralModalOpen} onClose={() => setIsReferralModalOpen(false)} onSaved={fetchDoctors} />
     </div>
   )
 }

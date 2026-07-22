@@ -36,13 +36,13 @@ export const patientService = {
     return response.data;
   },
 
-  updateVisit: async (visitId, visitData) => {
-    const response = await api.put(`/visits/${visitId}`, visitData);
+  updateVisit: async (patientId, visitId, visitData) => {
+    const response = await api.put(`/patients/${patientId}/visits/${visitId}`, visitData);
     return response.data;
   },
 
-  deleteVisit: async (visitId) => {
-    const response = await api.delete(`/visits/${visitId}`);
+  deleteVisit: async (patientId, visitId) => {
+    const response = await api.delete(`/patients/${patientId}/visits/${visitId}`);
     return response.data;
   },
 };
