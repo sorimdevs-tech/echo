@@ -106,9 +106,9 @@ export default function ClinicalWorkspace({ initialType = 'Adult Echo' }) {
   </Workspace>
 }
 
-function FindingGrid({fields,data,setData}) { return <div className="grid gap-3 lg:grid-cols-2">{fields.map((field)=><div key={field.key} className="grid gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3 sm:grid-cols-2"><Field {...field} optionField={field.key} value={data[field.key]} onChange={(value)=>setData({...data,[field.key]:value})}/><Field label={`${field.label} comments`} value={data[`${field.key}Comment`]} onChange={(value)=>setData({...data,[`${field.key}Comment`]:value})}/></div>)}</div> }
+function FindingGrid({fields,data,setData}) { return <div className="grid gap-3 lg:grid-cols-2">{fields.map((field)=><div key={field.key} className="grid gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3 sm:grid-cols-2"><Field label={field.label} type={field.type} options={field.options} addable={field.addable} optionField={field.key} value={data[field.key]} onChange={(value)=>setData({...data,[field.key]:value})}/><Field label={`${field.label} comments`} value={data[`${field.key}Comment`]} onChange={(value)=>setData({...data,[`${field.key}Comment`]:value})}/></div>)}</div> }
 
-function ZScoreGrid({fields,data,setData}) { return <div className="grid gap-3 lg:grid-cols-2">{fields.map((field)=><div key={field.key} className="grid gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3 sm:grid-cols-[1fr_140px]"><Field {...field} value={data[field.key]} onChange={(value)=>setData({...data,[field.key]:value})}/><Field label="Z-score" type="number" value={data[`${field.key}ZScore`]} onChange={(value)=>setData({...data,[`${field.key}ZScore`]:value})}/></div>)}</div> }
+function ZScoreGrid({fields,data,setData}) { return <div className="grid gap-3 lg:grid-cols-2">{fields.map((field)=><div key={field.key} className="grid gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3 sm:grid-cols-[1fr_140px]"><Field label={field.label} type={field.type} options={field.options} addable={field.addable} value={data[field.key]} onChange={(value)=>setData({...data,[field.key]:value})}/><Field label="Z-score" type="number" value={data[`${field.key}ZScore`]} onChange={(value)=>setData({...data,[`${field.key}ZScore`]:value})}/></div>)}</div> }
 
 function CustomMeasurements({data,setData}) {
   const rows=data.customMeasurements||[]

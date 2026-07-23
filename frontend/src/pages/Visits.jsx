@@ -46,7 +46,7 @@ export default function Visits() {
   const addVisit = async (event) => {
     event.preventDefault()
     if (!selectedPatient) { alert('Please select a patient'); return }
-    const selectedPatientRecord = patients.find((item) => item.id === selectedPatient)
+    const selectedPatientRecord = patients.find((item) => String(item.id) === String(selectedPatient))
     if (!selectedPatientRecord) { alert('The selected patient record could not be found'); return }
     setSaving(true)
     setStatus('')
@@ -72,7 +72,7 @@ export default function Visits() {
     setStatus('Visit removed from this patient')
   }
 
-  const patient = patients.find((item) => item.id === selectedPatient)
+  const patient = patients.find((item) => String(item.id) === String(selectedPatient))
   const openEcho = (type) => {
     if (!selectedPatient) return
     const matchingScan = scans.find((scan) => scan.scan_type === type)
