@@ -33,6 +33,13 @@ function Layout({ children }) {
     setTimeout(() => window.location.reload(), 100)
   }
 
+  const handleSignOut = () => {
+    sessionStorage.removeItem('echoai_user')
+    localStorage.removeItem('echoai_user')
+    localStorage.removeItem('echoai_google_access_token')
+    navigate('/', { replace: true })
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
       <Sidebar />
@@ -84,6 +91,10 @@ function Layout({ children }) {
             <button type="button" onClick={handleRefresh} className="toolbar-button">
               <RefreshCw className="h-4 w-4" />
               <span>Refresh</span>
+            </button>
+            <button type="button" onClick={handleSignOut} className="toolbar-button text-red-700">
+              <Power className="h-4 w-4" />
+              <span>Sign out</span>
             </button>
           </div>
         </header>
