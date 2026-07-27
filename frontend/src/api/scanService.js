@@ -1,5 +1,13 @@
 import api from './axios';
 
+let dashboardStatsCache = null;
+let dashboardStatsRequest = null;
+
+const invalidateDashboardStats = () => {
+  dashboardStatsCache = null;
+  dashboardStatsRequest = null;
+};
+
 export const scanService = {
   getScans: async () => {
     const response = await api.get('/scans');
@@ -18,23 +26,37 @@ export const scanService = {
 
   createScan: async (scanData) => {
     const response = await api.post('/scans', scanData);
+    invalidateDashboardStats();
     return response.data;
   },
 
   updateScan: async (id, scanData) => {
     const response = await api.put(`/scans/${id}`, scanData);
+    invalidateDashboardStats();
     return response.data;
   },
 
   deleteScan: async (id) => {
     const response = await api.delete(`/scans/${id}`);
+    invalidateDashboardStats();
     return response.data;
   },
 
   getDashboardStats: async () => {
+    if (dashboardStatsCache) return dashboardStatsCache;
+    if (dashboardStatsRequest) return dashboardStatsRequest;
+
     try {
-      const response = await api.get('/dashboard/stats');
-      return response.data;
+      dashboardStatsRequest = api.get('/dashboard/stats')
+        .then((response) => {
+          dashboardStatsCache = response.data;
+          return dashboardStatsCache;
+        })
+        .finally(() => {
+          dashboardStatsRequest = null;
+        });
+
+      return await dashboardStatsRequest;
     } catch (error) {
       console.warn('Backend unavailable, using demo dashboard stats');
       return {

@@ -9,23 +9,20 @@ import {
   FileText,
   Building2,
   BarChart3,
-  Settings,
   Cog,
-  Search
+  Power,
 } from 'lucide-react'
 
-function Sidebar() {
+function Sidebar({ onSignOut }) {
   const navItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/patients', icon: Users, label: 'Patients' },
-    { path: '/search', icon: Search, label: 'Search' },
-    { path: '/visits', icon: Activity, label: 'Visits' },
     { path: '/echo-studies', icon: Activity, label: 'Echo Studies' },
     { path: '/images', icon: ImageIcon, label: 'Images' },
     { path: '/measurements', icon: Ruler, label: 'Measurements' },
-    { path: '/ai-assistant', icon: Brain, label: 'AI Assistant' },
+    { path: '/ai-assistant', icon: Brain, label: 'AI Assistant', disabled: true },
     { path: '/reports', icon: FileText, label: 'Reports' },
-    { path: '/crm', icon: Building2, label: 'CRM' },
+    { path: '/crm', icon: Building2, label: 'CRM', disabled: true },
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
     { path: '/settings', icon: Cog, label: 'Settings' },
   ]
@@ -47,6 +44,22 @@ function Sidebar() {
       <nav className="p-4 space-y-2">
         {navItems.map((item) => {
           const Icon = item.icon
+          if (item.disabled) {
+            return (
+              <button
+                key={item.path}
+                type="button"
+                disabled
+                title={`${item.label} is currently disabled`}
+                className="flex w-full cursor-not-allowed items-center space-x-3 rounded-lg px-4 py-3 text-left text-white/45"
+              >
+                <Icon className="h-5 w-5" />
+                <span className="font-medium">{item.label}</span>
+                <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide">Disabled</span>
+              </button>
+            )
+          }
+
           return (
             <NavLink
               key={item.path}
@@ -64,6 +77,14 @@ function Sidebar() {
             </NavLink>
           )
         })}
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="flex w-full items-center space-x-3 rounded-lg px-4 py-3 text-left text-white/90 transition-colors duration-200 hover:bg-white/10"
+        >
+          <Power className="h-5 w-5" />
+          <span className="font-medium">Sign out</span>
+        </button>
       </nav>
 
       <div className="absolute bottom-0 left-0 right-0 border-t border-white/20 p-4">

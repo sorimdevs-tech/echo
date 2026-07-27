@@ -4,9 +4,7 @@ import {
   Activity,
   CalendarDays,
   Pencil,
-  Power,
   RefreshCw,
-  RotateCcw,
   Search as SearchIcon,
   UserPlus,
 } from 'lucide-react'
@@ -33,9 +31,16 @@ function Layout({ children }) {
     setTimeout(() => window.location.reload(), 100)
   }
 
+  const handleSignOut = () => {
+    sessionStorage.removeItem('echoai_user')
+    localStorage.removeItem('echoai_user')
+    localStorage.removeItem('echoai_google_access_token')
+    navigate('/', { replace: true })
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
-      <Sidebar />
+      <Sidebar onSignOut={handleSignOut} />
       <div className="flex h-full min-w-0 flex-1 flex-col px-1 py-1 sm:px-2 lg:px-3">
         <header className="mb-3 flex shrink-0 flex-col gap-3 border-b border-slate-200 pb-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">

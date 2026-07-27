@@ -1,11 +1,14 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Any, Dict
 import sqlite3
 import json
 from datetime import datetime, date
 import os
+import shutil
 
 app = FastAPI(title="Echo AI Backend", version="1.0.0")
 
@@ -18,9 +21,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Resolve DB path relative to current file directory
+# Use the bundled database locally and a persistent-disk path on Render.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'echo.db')
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, 'echo.db')
+DB_PATH = os.environ.get('DB_PATH', DEFAULT_DB_PATH)
+UPLOADS_DIR = os.environ.get('UPLOADS_DIR', os.path.join(BASE_DIR, 'uploads'))
+FRONTEND_DIST = os.environ.get(
+    'FRONTEND_DIST',
+    os.path.abspath(os.path.join(BASE_DIR, '..', 'frontend', 'dist')),
+)
+
+def prepare_runtime_storage():
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    if DB_PATH != DEFAULT_DB_PATH and not os.path.exists(DB_PATH):
+        shutil.copy2(DEFAULT_DB_PATH, DB_PATH)
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -294,10 +309,11 @@ def init_db():
 
 @app.on_event("startup")
 def startup():
+    prepare_runtime_storage()
     init_db()
 
-@app.get('/')
-def root():
+@app.get('/api/health')
+def health():
     return {"message": "Echo AI Cardiology API Server", "status": "online", "version": "1.0.0"}
 
 # Helper Patient Data Mapper
@@ -1136,10 +1152,9 @@ def delete_resource(resource: str, item_id: int):
 @app.post('/api/media-upload')
 async def upload_media(file: UploadFile = File(...)):
     try:
-        uploads_dir = os.path.join(BASE_DIR, 'uploads')
-        os.makedirs(uploads_dir, exist_ok=True)
-        
-        file_path = os.path.join(uploads_dir, file.filename)
+        os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+        file_path = os.path.join(UPLOADS_DIR, file.filename)
         with open(file_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
@@ -1149,6 +1164,30 @@ async def upload_media(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
+app.mount('/uploads', StaticFiles(directory=UPLOADS_DIR, check_dir=False), name='uploads')
+
+@app.get('/{full_path:path}', include_in_schema=False)
+def serve_frontend(full_path: str):
+    if full_path.startswith('api/'):
+        raise HTTPException(status_code=404, detail='API endpoint not found')
+
+    dist_root = os.path.realpath(FRONTEND_DIST)
+    requested_path = os.path.realpath(os.path.join(dist_root, full_path))
+    if requested_path.startswith(f'{dist_root}{os.sep}') and os.path.isfile(requested_path):
+        return FileResponse(requested_path)
+
+    index_path = os.path.join(dist_root, 'index.html')
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+
+    if not full_path:
+        return JSONResponse({
+            "message": "Echo AI Cardiology API Server",
+            "status": "online",
+            "version": "1.0.0",
+        })
+    raise HTTPException(status_code=404, detail='Frontend build not found')
+
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8002)
+    uvicorn.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', '8002')))
