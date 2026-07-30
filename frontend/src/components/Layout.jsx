@@ -1,27 +1,43 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import {
-  Activity,
   CalendarDays,
   Pencil,
-  Power,
   RefreshCw,
-  RotateCcw,
   Search as SearchIcon,
   UserPlus,
 } from 'lucide-react'
+import EchoLogo from './EchoLogo'
 
 function Layout({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
   const pageTitles = {
-    '/': 'Dashboard', '/dashboard': 'Dashboard', '/search': 'Patient Search', '/patients': 'Patients',
-    '/patients/new': 'New Patient', '/visits': 'Visits', '/referral-doctors': 'Referral Doctors',
-    '/echo-studies': 'Echo Studies', '/images': 'Images & DICOM', '/measurements': 'Measurements',
-    '/reports': 'Clinical Reports', '/analytics': 'Queries & Analytics', '/settings': 'Settings',
-    '/administration': 'Administration', '/crm': 'CRM', '/ai-assistant': 'AI Assistant',
+    '/': 'Dashboard',
+    '/dashboard': 'Dashboard',
+    '/search': 'Patient Search',
+    '/patients': 'Patients',
+    '/patients/new': 'New Patient',
+    '/visits': 'Visits',
+    '/referral-doctors': 'Referral Doctors',
+    '/echo-studies': 'Echo Studies',
+    '/fetal-echo-report': 'Fetal Echo Report',
+    '/adult-echo-report': 'Adult Echo Report',
+    '/pediatric-echo-report': 'Pediatric Echo Report',
+    '/echo-scan': 'Echo Scan',
+    '/images': 'Images & DICOM',
+    '/measurements': 'Measurements',
+    '/reports': 'Clinical Reports',
+    '/analytics': 'Queries & Analytics',
+    '/settings': 'Settings',
+    '/administration': 'Administration',
   }
-  const pageTitle = Object.entries(pageTitles).find(([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`))?.[1] || 'CardioEcho AI'
+
+  const pageTitle = /^\/patients\/[^/]+\/edit$/.test(location.pathname)
+    ? 'Edit Patient'
+    : Object.entries(pageTitles).sort(([left], [right]) => right.length - left.length).find(
+        ([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`),
+      )?.[1] || 'echoAI'
 
   const handleSearch = (e) => {
     e?.preventDefault()
@@ -38,15 +54,7 @@ function Layout({ children }) {
       <Sidebar />
       <div className="flex h-full min-w-0 flex-1 flex-col px-1 py-1 sm:px-2 lg:px-3">
         <header className="mb-3 flex shrink-0 flex-col gap-3 border-b border-slate-200 pb-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-white shadow-sm">
-              <Activity className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">EchoScan</p>
-              <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
-            </div>
-          </div>
+          <EchoLogo compact />
 
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -89,6 +97,9 @@ function Layout({ children }) {
         </header>
 
         <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto pb-3">
+          <div className="shrink-0 px-1 pt-1">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950">{pageTitle}</h1>
+          </div>
           {children}
         </main>
       </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Activity, Calendar, CheckCircle2, FileText, Plus, Save, Search, Stethoscope, Trash2, UserCheck } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { patientService } from '../api/patientService'
 import { scanService } from '../api/scanService'
 import { workspaceService } from '../api/workspaceService'
@@ -9,6 +9,8 @@ import ReferralDoctorModal from '../components/ReferralDoctorModal'
 
 export default function Visits() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const patientParam = searchParams.get('patient') || searchParams.get('patientId') || searchParams.get('patient_id') || ''
   const [patients, setPatients] = useState([])
   const [selectedPatient, setSelectedPatient] = useState('')
   const [visits, setVisits] = useState([])
@@ -22,9 +24,21 @@ export default function Visits() {
 
   useEffect(() => {
     Promise.all([patientService.getPatients(), workspaceService.getTemplates()])
-      .then(([patientResult, templateResult]) => { setPatients(patientResult.data || []); setTemplates(templateResult.data || []) })
+      .then(([patientResult, templateResult]) => {
+        const patientList = patientResult.data || []
+        setPatients(patientList)
+        setTemplates(templateResult.data || [])
+        if (patientParam) {
+          const found = patientList.find(
+            (p) => String(p.id) === String(patientParam) || String(p.patient_id) === String(patientParam)
+          )
+          if (found) {
+            selectPatient(found.id)
+          }
+        }
+      })
       .catch(() => { setPatients([]); setTemplates([]) })
-  }, [])
+  }, [patientParam])
 
   const selectPatient = async (patientId) => {
     setSelectedPatient(patientId)
@@ -145,12 +159,12 @@ export default function Visits() {
           </form>
           <div className="flex flex-wrap gap-2 border-b border-slate-200 px-4 py-3">
             <button type="button" disabled={!patient} onDoubleClick={() => setReferralOpen(true)} onClick={() => setReferralOpen(true)} className="secondary-button disabled:opacity-40"><Stethoscope className="h-4 w-4" />New referral doctor</button>
-            <button type="button" disabled={!patient || !visits.length} onClick={() => navigate(`/echo-studies?patient=${selectedPatient}&visit=${visits[0]?.id || ''}`)} className="primary-button disabled:opacity-40"><FileText className="h-4 w-4" />Save and go to reporting</button>
+            <button type="button" disabled={!patient || !visits.length} onClick={() => navigate(`/fetal-echo-report?patientId=${selectedPatient}&visitId=${visits[0]?.id || ''}&scatter=true`)} className="primary-button disabled:opacity-40"><FileText className="h-4 w-4" />Save and go to reporting</button>
           </div>
           <div className="overflow-x-auto">
             <table className="data-table min-w-[760px]">
               <thead><tr><th>No.</th><th>Patient</th><th>Visit date</th><th>Referral doctor</th><th>Notes</th><th>Action</th></tr></thead>
-              <tbody>{visits.map((visit, index) => <tr key={visit.id || index}><td>{index + 1}</td><td><div className="font-medium text-slate-900">{visit.patient_display_id || patient?.patient_id}</div><div className="text-xs text-slate-500">{visit.patient_name || `${patient?.first_name || ''} ${patient?.last_name || ''}`}</div></td><td>{visit.visit_date ? new Date(visit.visit_date).toLocaleString() : '-'}</td><td>{visit.referral_doctor || '—'}</td><td>{visit.notes || '—'}</td><td><button type="button" onClick={() => deleteVisit(visit.id)} className="rounded p-2 text-red-600 hover:bg-red-50" title="Delete visit"><Trash2 className="h-4 w-4" /></button></td></tr>)}</tbody>
+              <tbody>{visits.map((visit, index) => <tr key={visit.id || index} onClick={() => navigate(`/fetal-echo-report?patientId=${selectedPatient}&visitId=${visit.id || ''}&scatter=true`)} title="Click to view report with normal comments" className="cursor-pointer transition hover:bg-teal-50/60"><td>{index + 1}</td><td><div className="font-medium text-slate-900">{visit.patient_display_id || patient?.patient_id}</div><div className="text-xs text-slate-500">{visit.patient_name || `${patient?.first_name || ''} ${patient?.last_name || ''}`}</div></td><td>{visit.visit_date ? new Date(visit.visit_date).toLocaleString() : '-'}</td><td>{visit.referral_doctor || '—'}</td><td>{visit.notes || '—'}</td><td><button type="button" onClick={(e) => { e.stopPropagation(); deleteVisit(visit.id) }} className="rounded p-2 text-red-600 hover:bg-red-50" title="Delete visit"><Trash2 className="h-4 w-4" /></button></td></tr>)}</tbody>
             </table>
             {!loading && !visits.length && <p className="py-10 text-center text-sm text-slate-500">Select a patient or add their first visit.</p>}
           </div>

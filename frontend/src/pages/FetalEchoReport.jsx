@@ -12,6 +12,8 @@ import {
 import { patientService } from '../api/patientService'
 import { scanService } from '../api/scanService'
 
+import ImagesModal from '../components/ImagesModal'
+
 const mainTabs = [
   { id: 'scan', label: 'Scan' },
   { id: 'impression', label: 'Impression' },
@@ -293,6 +295,42 @@ function getPatientName(patient) {
   return name || patient.patient_id || ''
 }
 
+const fetalNormalComments = {
+  general: {
+    cardiac_views: 'Normal (Situs)',
+    abdominal_situs: 'Normal',
+    stomach: 'Left Sided',
+    heart_size: 'Normal',
+    apex: 'Normal',
+    cardiac_axis: 'Normal',
+    rhythm: 'Normal',
+  },
+  four_chamber: {
+    atria: 'Normal',
+    ventricles: 'Normal',
+    atrioventricular_junction: 'Concordant, normal',
+    atrioventricular_regurgitation: 'None',
+    interventricular_septum: 'Intact (well seen)',
+    ventricular_function: 'Normal',
+    interatrial_septum: 'Normal (Foramen Oval Flap Seen)',
+    foramen_ovale: 'Normal flow (Right to Left)',
+  },
+  outflow_tract: {
+    outflow_tracts: 'Normal',
+    va_valve_regurgitation: 'None',
+    branch_pulmonary_artery: 'Confluent, good size',
+    ductus_arteriosus: 'Normal in size and direction',
+    aortic_arch: 'Normal',
+    side_of_arch: 'Normal, left of trachea',
+    three_vessel_view: 'Normal',
+    three_vt_view: 'Normal',
+  },
+  others: {
+    systemic_veins: 'Normal',
+    pulmonary_veins: 'Normal',
+  },
+}
+
 function FetalEchoReport() {
   const navigate = useNavigate()
   const { scanId } = useParams()
@@ -304,6 +342,7 @@ function FetalEchoReport() {
   const [activeScanTab, setActiveScanTab] = useState('echo-details')
   const [activeImageTab, setActiveImageTab] = useState('images')
   const [isLmpOpen, setIsLmpOpen] = useState(false)
+  const [isImagesModalOpen, setIsImagesModalOpen] = useState(false)
   const [report, setReport] = useState(() => deepClone(initialReport))
   const [savedScanId, setSavedScanId] = useState(scanId || '')
   const [isSaving, setIsSaving] = useState(false)
@@ -313,6 +352,99 @@ function FetalEchoReport() {
     () => patients.find((patient) => patient.id === selectedPatientId),
     [patients, selectedPatientId],
   )
+
+  const isNormalCommentsPopulated = useMemo(() => {
+    const gen = report.echo_details?.general
+    const fc = report.echo_details?.four_chamber
+    const ot = report.echo_details?.outflow_tract
+    const oth = report.echo_details?.others
+
+    return Boolean(
+      gen?.cardiac_views || gen?.abdominal_situs || gen?.stomach ||
+      fc?.atria || fc?.ventricles || ot?.outflow_tracts || oth?.systemic_veins
+    )
+  }, [report.echo_details])
+
+  const scatterNormalComments = () => {
+    setReport((current) => ({
+      ...current,
+      echo_details: {
+        ...current.echo_details,
+        general: {
+          ...current.echo_details.general,
+          ...fetalNormalComments.general,
+        },
+        four_chamber: {
+          ...current.echo_details.four_chamber,
+          ...fetalNormalComments.four_chamber,
+        },
+        outflow_tract: {
+          ...current.echo_details.outflow_tract,
+          ...fetalNormalComments.outflow_tract,
+        },
+        others: {
+          ...current.echo_details.others,
+          ...fetalNormalComments.others,
+        },
+      },
+    }))
+  }
+
+  const toggleNormalComments = () => {
+    if (isNormalCommentsPopulated) {
+      setReport((current) => ({
+        ...current,
+        echo_details: {
+          ...current.echo_details,
+          general: {
+            ...current.echo_details.general,
+            cardiac_views: '',
+            abdominal_situs: '',
+            stomach: '',
+            heart_size: '',
+            apex: '',
+            cardiac_axis: '',
+            rhythm: '',
+          },
+          four_chamber: {
+            ...current.echo_details.four_chamber,
+            atria: '',
+            ventricles: '',
+            atrioventricular_junction: '',
+            atrioventricular_regurgitation: '',
+            interventricular_septum: '',
+            ventricular_function: '',
+            interatrial_septum: '',
+            foramen_ovale: '',
+          },
+          outflow_tract: {
+            ...current.echo_details.outflow_tract,
+            outflow_tracts: '',
+            va_valve_regurgitation: '',
+            branch_pulmonary_artery: '',
+            ductus_arteriosus: '',
+            aortic_arch: '',
+            side_of_arch: '',
+            three_vessel_view: '',
+            three_vt_view: '',
+          },
+          others: {
+            ...current.echo_details.others,
+            systemic_veins: '',
+            pulmonary_veins: '',
+          },
+        },
+      }))
+    } else {
+      scatterNormalComments()
+    }
+  }
+
+  useEffect(() => {
+    if (searchParams.get('scatter') === 'true' || searchParams.get('autoScatter') === 'true') {
+      scatterNormalComments()
+    }
+  }, [searchParams])
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -448,7 +580,7 @@ function FetalEchoReport() {
               <ToolbarButton icon={Trash2} label="Delete" />
               <ToolbarButton icon={RotateCcw} label="Clear" onClick={handleClear} />
               <ToolbarButton icon={Printer} label="Preview" onClick={() => window.print()} />
-              <ToolbarButton icon={FileImage} label="Images" onClick={() => setActiveImageTab('images')} />
+              <ToolbarButton icon={FileImage} label="Images" onClick={() => setIsImagesModalOpen(true)} />
               <ToolbarButton icon={X} label="Close" onClick={() => navigate('/search')} />
             </div>
           </div>
@@ -553,6 +685,8 @@ function FetalEchoReport() {
                   setActiveScanTab={setActiveScanTab}
                   report={report}
                   updateReport={updateReport}
+                  onToggleNormalComments={toggleNormalComments}
+                  isNormalCommentsPopulated={isNormalCommentsPopulated}
                 />
               ) : (
                 <ImpressionPanel report={report} updateReport={updateReport} />
@@ -581,11 +715,17 @@ function FetalEchoReport() {
           }}
         />
       )}
+
+      <ImagesModal
+        open={isImagesModalOpen}
+        onClose={() => setIsImagesModalOpen(false)}
+        patient={selectedPatient}
+      />
     </div>
   )
 }
 
-function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
+function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport, onToggleNormalComments, isNormalCommentsPopulated }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 px-2 pt-2">
@@ -602,7 +742,14 @@ function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
           </TabButton>
         ))}
       </div>
-      {activeScanTab === 'echo-details' && <EchoDetailsTab report={report} updateReport={updateReport} />}
+      {activeScanTab === 'echo-details' && (
+        <EchoDetailsTab
+          report={report}
+          updateReport={updateReport}
+          onToggleNormalComments={onToggleNormalComments}
+          isNormalCommentsPopulated={isNormalCommentsPopulated}
+        />
+      )}
       {activeScanTab === 'biometry' && <BiometryTab report={report} updateReport={updateReport} />}
       {activeScanTab === 'doppler' && <DopplerTab report={report} updateReport={updateReport} />}
       {activeScanTab === 'aortic' && <AorticTab report={report} updateReport={updateReport} />}
@@ -610,7 +757,7 @@ function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
   )
 }
 
-function EchoDetailsTab({ report, updateReport }) {
+function EchoDetailsTab({ report, updateReport, onToggleNormalComments, isNormalCommentsPopulated }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
@@ -689,7 +836,13 @@ function EchoDetailsTab({ report, updateReport }) {
         </Fieldset>
       </div>
       <aside className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <button type="button" className="legacy-small-button mb-4">Scatter normal comments</button>
+        <button
+          type="button"
+          onClick={onToggleNormalComments}
+          className="legacy-small-button mb-4"
+        >
+          {isNormalCommentsPopulated ? 'Clear all comments' : 'Scatter normal comments'}
+        </button>
         <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
           <input
             type="checkbox"
@@ -1127,13 +1280,67 @@ function Fieldset({ title = '', className = '', children }) {
   )
 }
 
+const fetalFieldOptions = {
+  'Cardiac views': ['Normal (Situs)', 'Situs Inversus', 'Situs Ambiguus', 'Not Visualised'],
+  'Abdominal situs': ['Normal', 'Inversus', 'Ambiguus', 'Left Sided', 'Right Sided'],
+  'Stomach': ['Left Sided', 'Right Sided', 'Absent', 'Normal'],
+  'Heart size': ['Normal', 'Enlarged', 'Small'],
+  'Apex': ['Normal', 'Left Sided', 'Right Sided', 'Midline'],
+  'Cardiac axis': ['Normal', 'Deviated Left', 'Deviated Right'],
+  'Rhythm': ['Normal', 'Bradycardia', 'Tachycardia', 'Ectopic beats', 'Irregular'],
+  'Atria': ['Normal', 'Dilated Right Atrium', 'Dilated Left Atrium', 'Single Atrium'],
+  'Ventricles': ['Normal', 'Hypoplastic Left Ventricle', 'Hypoplastic Right Ventricle', 'Dilated'],
+  'Atrioventricular junction': ['Concordant, normal', 'Discordant', 'Single Inlet', 'Double Inlet'],
+  'Atrioventricular regurgitation': ['None', 'Tricuspid Regurgitation', 'Mitral Regurgitation', 'Mild', 'Moderate', 'Severe'],
+  'Inter ventricular septum': ['Intact (well seen)', 'VSD (Perimembranous)', 'VSD (Muscular)', 'VSD (Inlet)', 'VSD (Outlet)'],
+  'Ventricular function': ['Normal', 'Depressed LV Function', 'Depressed RV Function', 'Biventricular Dysfunction'],
+  'Inter atrial septum': ['Normal (Foramen Oval Flap Seen)', 'ASD (Secundum)', 'ASD (Primum)', 'Intact'],
+  'Foramen ovale': ['Normal flow (Right to Left)', 'Restricted Flow', 'Reversed Flow (Left to Right)'],
+  'Outflow tracts': ['Normal', 'Transposition of Great Arteries', 'Tetralogy of Fallot', 'Truncus Arteriosus', 'Double Outlet RV'],
+  'V-A valve regurgitation': ['None', 'Aortic Regurgitation', 'Pulmonary Regurgitation', 'Mild', 'Moderate', 'Severe'],
+  'Branch pulmonary artery': ['Confluent, good size', 'Hypoplastic RPA', 'Hypoplastic LPA', 'Stenotic'],
+  'Ductus arteriosus': ['Normal in size and direction', 'Constricted', 'Absent', 'Reversed Flow'],
+  'Aortic arch': ['Normal', 'Coarctation', 'Hypoplastic Arch', 'Interrupted Arch'],
+  'Side of arch': ['Normal, left of trachea', 'Right Arch', 'Double Arch'],
+  '3VV': ['Normal', 'Abnormal Vessel Size', 'Abnormal Alignment'],
+  '3VT view': ['Normal', 'V-Sign Normal', 'U-Sign / Right Arch', 'Single Vessel'],
+  'Systemic veins': ['Normal', 'Persistent Left SVC', 'Interrupted IVC with Azygos Continuation'],
+  'Pulmonary veins': ['Normal', 'TAPVC', 'PAPVC', 'Partial Anomalous'],
+}
+
 function LegacyField({ label, value, onChange, withPlus = false }) {
+  const options = fetalFieldOptions[label] || ['Normal', 'Abnormal', 'Not Visualised']
+  const listId = `dl-${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+
   return (
-    <label className="grid min-w-0 gap-1 sm:grid-cols-[minmax(130px,0.8fr)_minmax(0,1fr)] sm:items-center">
+    <label className="grid min-w-0 gap-1 sm:grid-cols-[minmax(140px,0.85fr)_minmax(0,1fr)] sm:items-center">
       <span className="text-sm font-medium text-slate-700">{label}</span>
-      <span className="flex min-w-0 gap-2">
-        <input className="legacy-input w-full" value={value || ''} onChange={(event) => onChange(event.target.value)} />
-        {withPlus && <button type="button" className="legacy-plus-button">+</button>}
+      <span className="flex min-w-0 items-center gap-1.5">
+        <input
+          list={listId}
+          className="legacy-input w-full"
+          value={value || ''}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Select or type..."
+        />
+        <datalist id={listId}>
+          {options.map((opt) => (
+            <option key={opt} value={opt} />
+          ))}
+        </datalist>
+        {withPlus && (
+          <button
+            type="button"
+            className="legacy-plus-button"
+            title={`Add custom option for ${label}`}
+            onClick={() => {
+              const newVal = prompt(`Enter custom value for ${label}:`, value || '')
+              if (newVal !== null) onChange(newVal)
+            }}
+          >
+            +
+          </button>
+        )}
       </span>
     </label>
   )

@@ -53,6 +53,7 @@ function NewPatient() {
   const [visits, setVisits] = useState([])
   const [selectedScans, setSelectedScans] = useState([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [isReferralModalOpen, setIsReferralModalOpen] = useState(false)
   const countries = ['India', 'USA', 'UK', 'Other']
   const states = ['Karnataka', 'Maharashtra', 'Tamil Nadu', 'Kerala', 'Other']
@@ -69,6 +70,7 @@ function NewPatient() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     const shouldGoToReport = e.nativeEvent.submitter?.value === 'reporting'
+    setSubmitError('')
     setIsSubmitting(true)
     try {
       const patientResult = await patientService.createPatient(formData)
@@ -86,7 +88,7 @@ function NewPatient() {
       else navigate('/search')
     } catch (error) {
       console.error('Error creating patient:', error)
-      alert('Error creating patient')
+      setSubmitError(error.response?.data?.detail || 'Unable to create the patient. Please check the required fields and try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -586,6 +588,11 @@ function NewPatient() {
 
           {/* Bottom Action Buttons */}
           <div className="mt-3 bg-white rounded-lg shadow-sm border border-slate-200 p-2">
+            {submitError && (
+              <p role="alert" className="mb-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700">
+                {submitError}
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <button

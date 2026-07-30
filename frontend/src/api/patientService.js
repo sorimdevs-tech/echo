@@ -1,9 +1,28 @@
 import api from './axios';
 
+let patientsCache = null;
+let patientsRequest = null;
+
+const invalidatePatients = () => {
+  patientsCache = null;
+  patientsRequest = null;
+};
+
 export const patientService = {
   getPatients: async () => {
-    const response = await api.get('/patients');
-    return response.data;
+    if (patientsCache) return patientsCache;
+    if (patientsRequest) return patientsRequest;
+
+    patientsRequest = api.get('/patients')
+      .then((response) => {
+        patientsCache = response.data;
+        return patientsCache;
+      })
+      .finally(() => {
+        patientsRequest = null;
+      });
+
+    return patientsRequest;
   },
 
   getPatient: async (id) => {
@@ -13,16 +32,19 @@ export const patientService = {
 
   createPatient: async (patientData) => {
     const response = await api.post('/patients', patientData);
+    invalidatePatients();
     return response.data;
   },
 
   updatePatient: async (id, patientData) => {
     const response = await api.put(`/patients/${id}`, patientData);
+    invalidatePatients();
     return response.data;
   },
 
   deletePatient: async (id) => {
     const response = await api.delete(`/patients/${id}`);
+    invalidatePatients();
     return response.data;
   },
 

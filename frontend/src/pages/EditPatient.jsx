@@ -35,6 +35,8 @@ function EditPatient() {
     area_po: '',
   })
   const [loading, setLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   useEffect(() => {
     fetchPatient()
@@ -57,12 +59,16 @@ function EditPatient() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setSubmitError('')
+    setIsSubmitting(true)
     try {
       await patientService.updatePatient(id, formData)
       navigate('/patients')
     } catch (error) {
       console.error('Error updating patient:', error)
-      alert('Error updating patient')
+      setSubmitError(error.response?.data?.detail || 'Unable to update the patient. Please check the required fields and try again.')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -78,8 +84,7 @@ function EditPatient() {
     <div className="max-w-6xl mx-auto">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-800">Edit Patient</h1>
-          <p className="text-sm text-gray-600 mt-1">Update patient information</p>
+          <p className="text-sm text-gray-600">Update patient information</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -341,6 +346,11 @@ function EditPatient() {
           </div>
 
           {/* Action Buttons */}
+          {submitError && (
+            <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              {submitError}
+            </p>
+          )}
           <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
             <button
               type="button"
@@ -350,9 +360,9 @@ function EditPatient() {
               <X className="w-4 h-4" />
               <span>Cancel</span>
             </button>
-            <button type="submit" className="btn-primary flex items-center space-x-2">
+            <button type="submit" disabled={isSubmitting} className="btn-primary flex items-center space-x-2 disabled:cursor-not-allowed disabled:opacity-50">
               <Save className="w-4 h-4" />
-              <span>Update Patient</span>
+              <span>{isSubmitting ? 'Updating...' : 'Update Patient'}</span>
             </button>
           </div>
         </form>
