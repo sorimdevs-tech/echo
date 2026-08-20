@@ -49,7 +49,7 @@ const printableColumns = [
   'Alias ID',
 ]
 
-const investigationStatuses = ['Abnormal', 'Ambiguity', 'Growth Abnormality', 'Normal', 'Normal variant']
+const investigationStatuses = ['Abnormal', 'Ambiguity', 'Normal', 'Normal variant']
 
 const queryTabs = [
   { id: 'advanced', label: 'Advanced Query', icon: ClipboardList },

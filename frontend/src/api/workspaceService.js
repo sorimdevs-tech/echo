@@ -21,4 +21,6 @@ export const workspaceService = {
   update: async (resource, id, data) => (await api.put(`/resources/${resource}/${id}`, data)).data,
   remove: async (resource, id) => (await api.delete(`/resources/${resource}/${id}`)).data,
   uploadMedia: async (formData) => (await api.post('/media-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data,
+  sendReportEmail: async (data) => (await api.post('/report-email', data)).data,
+  testDeviceConnection: async (data) => (await api.post('/device-connection-test', data)).data,
 }

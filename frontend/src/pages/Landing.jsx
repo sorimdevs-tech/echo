@@ -1,5 +1,6 @@
 import { Activity, BarChart3, CalendarDays, ChevronRight, HeartPulse, Search, Settings, UserPlus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import EchoLogo from '../components/EchoLogo'
 
 const actions = [
   { label:'Search', description:'Open the clinical dashboard', icon:Search, path:'/dashboard', position:'lg:col-start-3 lg:row-start-1' },
@@ -17,8 +18,7 @@ export default function Landing(){
     <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col px-6 py-7 sm:px-10 lg:px-14">
       <header className="flex items-center justify-between">
         <button onClick={()=>navigate('/')} className="flex items-center gap-3 text-left">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-500 shadow-lg shadow-primary-950/30 ring-1 ring-white/20"><Activity className="h-7 w-7"/></span>
-          <span><span className="block text-xl font-bold tracking-tight">CardioEcho AI</span><span className="text-xs uppercase tracking-[0.22em] text-cyan-200">Reporting system</span></span>
+          <EchoLogo compact light />
         </button>
         <button onClick={()=>navigate('/dashboard')} className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-2.5 text-sm font-semibold backdrop-blur transition hover:bg-white/20 sm:inline-flex">Open dashboard<ChevronRight className="h-4 w-4"/></button>
       </header>
@@ -43,7 +43,7 @@ export default function Landing(){
           </div>
         </div>
       </section>
-      <footer className="flex flex-col gap-2 border-t border-white/10 pt-5 text-xs text-blue-100/60 sm:flex-row sm:items-center sm:justify-between"><span>CardioEcho AI · Clinical reporting workspace</span><span>Secure local patient and report management</span></footer>
+      <footer className="flex flex-col gap-2 border-t border-white/10 pt-5 text-xs text-blue-100/60 sm:flex-row sm:items-center sm:justify-between"><span>echoAI · Clinical reporting workspace</span><span>Secure local patient and report management</span></footer>
     </div>
   </main>
 }

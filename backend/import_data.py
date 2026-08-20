@@ -10,7 +10,8 @@ def import_data():
     print(f"Initializing SQLite database schema at {DB_PATH}...")
     init_db()
     
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=60.0)
+    conn.execute('PRAGMA busy_timeout=30000')
     c = conn.cursor()
     
     if not os.path.exists(JSON_PATH):

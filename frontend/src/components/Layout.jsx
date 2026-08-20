@@ -1,94 +1,55 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
-import {
-  Activity,
-  CalendarDays,
-  Pencil,
-  Power,
-  RefreshCw,
-  RotateCcw,
-  Search as SearchIcon,
-  UserPlus,
-} from 'lucide-react'
+import GlobalSearch from './GlobalSearch'
+import { Bell } from 'lucide-react'
 
 function Layout({ children }) {
-  const navigate = useNavigate()
   const location = useLocation()
-  const pageTitles = {
-    '/': 'Dashboard', '/dashboard': 'Dashboard', '/search': 'Patient Search', '/patients': 'Patients',
-    '/patients/new': 'New Patient', '/visits': 'Visits', '/referral-doctors': 'Referral Doctors',
-    '/echo-studies': 'Echo Studies', '/images': 'Images & DICOM', '/measurements': 'Measurements',
-    '/reports': 'Clinical Reports', '/analytics': 'Queries & Analytics', '/settings': 'Settings',
-    '/administration': 'Administration', '/crm': 'CRM', '/ai-assistant': 'AI Assistant',
-  }
-  const pageTitle = Object.entries(pageTitles).find(([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`))?.[1] || 'CardioEcho AI'
-
-  const handleSearch = (e) => {
-    e?.preventDefault()
-    navigate('/search')
-  }
-
-  const handleRefresh = () => {
-    navigate('/search')
-    setTimeout(() => window.location.reload(), 100)
-  }
+  const isDashboard = location.pathname === '/' || location.pathname === '/dashboard'
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
+    <div className="flex h-screen overflow-hidden bg-[#f4f6f8] text-slate-900 font-sans">
       <Sidebar />
-      <div className="flex h-full min-w-0 flex-1 flex-col px-1 py-1 sm:px-2 lg:px-3">
-        <header className="mb-3 flex shrink-0 flex-col gap-3 border-b border-slate-200 pb-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-white shadow-sm">
-              <Activity className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">EchoScan</p>
-              <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
-            </div>
+      <div className="flex h-full min-w-0 flex-1 flex-col px-4 py-4 lg:px-6">
+        {/* Modern Header Navigation Bar */}
+        <header className="no-print mb-4 flex shrink-0 items-center justify-between gap-4">
+          {/* Welcome Title */}
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+              Welcome back, Dr. Sarah 👋
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Here's what's happening with your echoAI system today.
+            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Right Area: Global Search + Notifications + User Avatar (WITHOUT New Patient button) */}
+          <div className="flex items-center gap-3">
+            {/* Global Search Component */}
+            <div className="w-72 sm:w-80 md:w-96">
+              <GlobalSearch />
+            </div>
+
+            {/* Notification Bell */}
             <button
               type="button"
-              onClick={handleSearch}
-              className={`toolbar-button ${
-                location.pathname === '/search'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'hover:border-teal-300 hover:bg-teal-50'
-              }`}
+              className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200/80 text-slate-600 shadow-2xs hover:bg-slate-50 transition"
+              title="Notifications"
             >
-              <SearchIcon className="h-4 w-4" />
-              <span className={location.pathname === '/search' ? 'font-semibold' : ''}>Search</span>
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white">
+                3
+              </span>
             </button>
-            <button
-              type="button"
-              onClick={() => navigate('/patients/new')}
-              className={`toolbar-button ${
-                location.pathname === '/patients/new'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'hover:border-teal-300 hover:bg-teal-50'
-              }`}
-            >
-              <UserPlus className="h-4 w-4" />
-              <span className={location.pathname === '/patients/new' ? 'font-semibold' : ''}>New patient</span>
-            </button>
-            <button type="button" className="toolbar-button" onClick={() => navigate('/patients')}>
-              <Pencil className="h-4 w-4" />
-              <span>Edit patient</span>
-            </button>
-            <button type="button" className="toolbar-button" onClick={() => navigate('/visits')}>
-              <CalendarDays className="h-4 w-4" />
-              <span>Visits</span>
-            </button>
-            <button type="button" onClick={handleRefresh} className="toolbar-button">
-              <RefreshCw className="h-4 w-4" />
-              <span>Refresh</span>
-            </button>
+
+            {/* User Avatar Circle */}
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white shadow-2xs">
+              DS
+            </div>
           </div>
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto pb-3">
+        <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto no-scrollbar pb-4">
           {children}
         </main>
       </div>

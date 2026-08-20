@@ -1,11 +1,18 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Any, Dict
 import sqlite3
 import json
 from datetime import datetime, date
 import os
+import shutil
+import uuid
+import smtplib
+import socket
+from email.message import EmailMessage
 
 app = FastAPI(title="Echo AI Backend", version="1.0.0")
 
@@ -18,18 +25,93 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Resolve DB path relative to current file directory
+# Use the bundled database locally and a persistent-disk path on Render.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'echo.db')
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, 'echo.db')
+DB_PATH = os.environ.get('DB_PATH', DEFAULT_DB_PATH)
+UPLOADS_DIR = os.environ.get('UPLOADS_DIR', os.path.join(BASE_DIR, 'uploads'))
+FRONTEND_DIST = os.environ.get(
+    'FRONTEND_DIST',
+    os.path.abspath(os.path.join(BASE_DIR, '..', 'frontend', 'dist')),
+)
+
+def prepare_runtime_storage():
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    if DB_PATH != DEFAULT_DB_PATH and not os.path.exists(DB_PATH):
+        shutil.copy2(DEFAULT_DB_PATH, DB_PATH)
+
+class SQLiteConn:
+    def __init__(self, path, timeout=60.0):
+        self._conn = sqlite3.connect(path, timeout=timeout)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute('PRAGMA busy_timeout=30000')
+
+    def cursor(self):
+        return self._conn.cursor()
+
+    def execute(self, sql, parameters=()):
+        return self._conn.execute(sql, parameters)
+
+    def executemany(self, sql, seq_of_parameters):
+        return self._conn.executemany(sql, seq_of_parameters)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
+    def close(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.rollback()
+        self.close()
+
+    def __del__(self):
+        self.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return SQLiteConn(DB_PATH, timeout=60.0)
+
+def _scan_to_dict(scan):
+    result = dict(scan)
+    raw_report = result.get('report_data')
+    if raw_report:
+        try:
+            report = json.loads(raw_report) if isinstance(raw_report, str) else raw_report
+            report_key = {
+                'Fetal Echo': 'fetal_echo_report',
+                'Adult Echo': 'adult_echo_report',
+                'Pediatric Echo': 'pediatric_echo_report',
+            }.get(result.get('scan_type'))
+            if report_key:
+                result[report_key] = report
+        except (TypeError, json.JSONDecodeError):
+            pass
+    return result
 
 # Unified Database Initialization
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = SQLiteConn(DB_PATH, timeout=60.0)
+    try:
+        conn.execute('PRAGMA journal_mode=WAL')
+    except Exception:
+        pass
     c = conn.cursor()
     
     # 1. Patients table
@@ -79,6 +161,30 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Keep existing seeded and Render databases compatible with the current
+    # patient forms. CREATE TABLE IF NOT EXISTS does not add newly introduced
+    # columns to an older database, so apply additive migrations explicitly.
+    patient_columns = {
+        'middle_name': 'TEXT',
+        'street': 'TEXT',
+        'area': 'TEXT',
+        'area_po': 'TEXT',
+        'taluk': 'TEXT',
+        'district_city': 'TEXT',
+        'zip_code': 'TEXT',
+        'country': "TEXT DEFAULT 'India'",
+        'ethnic_origin': 'TEXT',
+        'fax': 'TEXT',
+        'family_doctor': 'TEXT',
+        'custom_data': "TEXT DEFAULT '{}'",
+    }
+    existing_patient_columns = {
+        row[1] for row in c.execute('PRAGMA table_info(patients)').fetchall()
+    }
+    for column, definition in patient_columns.items():
+        if column not in existing_patient_columns:
+            c.execute(f'ALTER TABLE patients ADD COLUMN {column} {definition}')
     
     # 2. Visits table
     c.execute('''
@@ -91,6 +197,9 @@ def init_db():
             diagnosis TEXT,
             notes TEXT,
             referral_doctor TEXT,
+            scan_type TEXT DEFAULT 'Fetal Echo',
+            report_template_id TEXT,
+            documentation_name TEXT,
             image_count INTEGER DEFAULT 0,
             avi INTEGER DEFAULT 0,
             pregnancy INTEGER DEFAULT 0,
@@ -100,6 +209,20 @@ def init_db():
             FOREIGN KEY (patient_id) REFERENCES patients(id)
         )
     ''')
+
+    visit_columns = {
+        'scan_type': "TEXT DEFAULT 'Fetal Echo'",
+        'report_template_id': 'TEXT',
+        'documentation_name': 'TEXT',
+        'documentation_path': 'TEXT',
+        'custom_data': "TEXT DEFAULT '{}'",
+    }
+    existing_visit_columns = {
+        row[1] for row in c.execute('PRAGMA table_info(visits)').fetchall()
+    }
+    for column, definition in visit_columns.items():
+        if column not in existing_visit_columns:
+            c.execute(f'ALTER TABLE visits ADD COLUMN {column} {definition}')
     
     # 3. Scans table
     c.execute('''
@@ -131,6 +254,72 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (patient_id) REFERENCES patients(id)
         )
+    ''')
+
+    # Keep older seeded and Render databases compatible with the current scan
+    # editor. Existing databases only contain the original core scan columns,
+    # and CREATE TABLE IF NOT EXISTS does not add the newer workflow fields.
+    scan_columns = {
+        'patient_display_id': 'TEXT',
+        'visit_id': 'INTEGER',
+        'abnormal': 'BOOLEAN DEFAULT 0',
+        'ambiguity': 'BOOLEAN DEFAULT 0',
+        'growthAbnormality': 'BOOLEAN DEFAULT 0',
+        'normal': 'BOOLEAN DEFAULT 1',
+        'normalVariant': 'BOOLEAN DEFAULT 0',
+        'indication': 'TEXT',
+        'diagnosis': 'TEXT',
+        'referralDoctor': 'TEXT',
+        'primaryConsultant': 'TEXT',
+        'signedByLeft': 'TEXT',
+        'signedByRight': 'TEXT',
+        'typedBy': 'TEXT',
+        'reviewedBy': 'TEXT',
+        'icdCode': 'TEXT',
+        'report_data': 'TEXT',
+    }
+    existing_scan_columns = {
+        row[1] for row in c.execute('PRAGMA table_info(scans)').fetchall()
+    }
+    for column, definition in scan_columns.items():
+        if column not in existing_scan_columns:
+            c.execute(f'ALTER TABLE scans ADD COLUMN {column} {definition}')
+
+    placeholder_scan_count = c.execute(
+        "SELECT COUNT(*) FROM scans WHERE patient_id = 'patient_id'"
+    ).fetchone()[0]
+    total_scan_count = c.execute('SELECT COUNT(*) FROM scans').fetchone()[0]
+    if placeholder_scan_count == 136 and total_scan_count == 136:
+        seeded_scan_patient_ids = [
+            1, 2, 2, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9, 10, 11, 11, 12, 12,
+            13, 14, 15, 15, 16, 17, 17, 18, 18, 19, 20, 21, 21, 22, 23,
+            24, 24, 25, 25, 26, 27, 28, 29, 29, 30, 30, 31, 32, 32, 33,
+            34, 35, 36, 37, 38, 39, 39, 40, 41, 42, 43, 43, 44, 45, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 54, 55, 55, 56, 57, 57,
+            58, 59, 60, 61, 62, 62, 63, 64, 65, 65, 66, 67, 68, 68, 69,
+            70, 70, 71, 72, 73, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82,
+            83, 84, 84, 85, 86, 86, 87, 87, 88, 88, 89, 89, 90, 91, 91,
+            92, 93, 93, 94, 94, 95, 96, 97, 98, 98, 99, 99, 100,
+        ]
+        c.executemany(
+            'UPDATE scans SET patient_id = ? WHERE id = ?',
+            [(patient_id, index) for index, patient_id in enumerate(seeded_scan_patient_ids, start=1)],
+        )
+
+    c.execute('''
+        UPDATE scans
+        SET patient_display_id = (
+            SELECT patients.patient_id
+            FROM patients
+            WHERE patients.id = scans.patient_id
+        )
+        WHERE (patient_display_id IS NULL OR patient_display_id = '' OR patient_display_id = 'patient_display_id')
+          AND patient_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM patients
+            WHERE patients.id = scans.patient_id
+          )
     ''')
     
     # 4. Referral doctors table
@@ -208,6 +397,17 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    settings_columns = {
+        'imageConfig': 'TEXT',
+        'configuration_json': "TEXT DEFAULT '{}'",
+    }
+    existing_settings_columns = {
+        row[1] for row in c.execute('PRAGMA table_info(settings)').fetchall()
+    }
+    for column, definition in settings_columns.items():
+        if column not in existing_settings_columns:
+            c.execute(f'ALTER TABLE settings ADD COLUMN {column} {definition}')
     
     # 8. Report templates table
     c.execute('''
@@ -294,10 +494,11 @@ def init_db():
 
 @app.on_event("startup")
 def startup():
+    prepare_runtime_storage()
     init_db()
 
-@app.get('/')
-def root():
+@app.get('/api/health')
+def health():
     return {"message": "Echo AI Cardiology API Server", "status": "online", "version": "1.0.0"}
 
 # Helper Patient Data Mapper
@@ -326,8 +527,20 @@ def _map_patient_row(row):
     patient['country'] = patient.get('country') or 'India'
     patient['fax'] = patient.get('fax') or ''
     patient['family_doctor'] = patient.get('family_doctor') or ''
+    try:
+        patient['custom_fields'] = json.loads(patient.get('custom_data') or '{}')
+    except (TypeError, json.JSONDecodeError):
+        patient['custom_fields'] = {}
 
     return patient
+
+def _map_visit_row(row):
+    visit = dict(row)
+    try:
+        visit['custom_fields'] = json.loads(visit.get('custom_data') or '{}')
+    except (TypeError, json.JSONDecodeError):
+        visit['custom_fields'] = {}
+    return visit
 
 # Dashboard Stats Endpoint
 @app.get('/api/dashboard/stats')
@@ -337,12 +550,14 @@ def get_dashboard_stats():
     
     total_patients = c.execute('SELECT COUNT(*) FROM patients').fetchone()[0]
     total_scans = c.execute('SELECT COUNT(*) FROM scans').fetchone()[0]
+    total_visits = c.execute('SELECT COUNT(*) FROM visits').fetchone()[0]
     adult_echo = c.execute('SELECT COUNT(*) FROM scans WHERE scan_type = "Adult Echo"').fetchone()[0]
     fetal_echo = c.execute('SELECT COUNT(*) FROM scans WHERE scan_type = "Fetal Echo"').fetchone()[0]
     pediatric_echo = c.execute('SELECT COUNT(*) FROM scans WHERE scan_type = "Pediatric Echo"').fetchone()[0]
     
     today_str = date.today().isoformat()
     todays_visits = c.execute('SELECT COUNT(*) FROM visits WHERE visit_date LIKE ?', (f"{today_str}%",)).fetchone()[0]
+    upcoming_visits = c.execute('SELECT COUNT(*) FROM visits WHERE date(visit_date) > date("now")', ()).fetchone()[0]
     
     conn.close()
     
@@ -351,12 +566,15 @@ def get_dashboard_stats():
         "data": {
             "total_patients": total_patients,
             "total_scans": total_scans,
+            "total_visits": total_visits,
             "adult_echo": adult_echo,
             "fetal_echo": fetal_echo,
             "pediatric_echo": pediatric_echo,
-            "todays_visits": todays_visits
+            "todays_visits": todays_visits,
+            "upcoming_visits": upcoming_visits,
         }
     }
+
 
 # Patient Endpoints
 @app.get('/api/patients')
@@ -444,6 +662,7 @@ def create_patient(data: dict):
         ))
         
         new_id = cursor.lastrowid
+        cursor.execute('UPDATE patients SET custom_data = ? WHERE id = ?', (json.dumps(data.get('custom_fields') or {}), new_id))
         conn.commit()
         
         # Increment settings next_number if setting exists
@@ -470,34 +689,42 @@ def update_patient(patient_id: int, data: dict):
     aadhar_number = data.get('aadhaar_no') or data.get('aadhar_number') or ''
     age = int(data.get('age')) if data.get('age') and str(data.get('age')).isdigit() else None
     
-    cursor.execute('''
-        UPDATE patients SET
-            patient_id = ?, salutation = ?, first_name = ?, middle_name = ?, last_name = ?, gender = ?,
-            age = ?, dob = ?, mobile = ?, phone1 = ?, phone2 = ?, email = ?,
-            address = ?, street = ?, area = ?, area_po = ?, taluk = ?, city = ?, district_city = ?,
-            state = ?, pincode = ?, zip_code = ?, country = ?, ethnic_origin = ?, aadhar_number = ?,
-            abha_number = ?, blood_group = ?, marital_status = ?, occupation = ?,
-            religion = ?, nationality = ?, emergency_contact_name = ?,
-            emergency_contact_phone = ?, emergency_contact_relation = ?, fax = ?, family_doctor = ?,
-            referred_by = ?, registration_date = ?, referred_by_doctor_id = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    ''', (
-        data.get('patient_id'), data.get('salutation'), data.get('first_name'), data.get('middle_name'),
-        data.get('last_name'), data.get('gender'), age, data.get('dob'), data.get('mobile'),
-        data.get('phone1'), data.get('phone2'), data.get('email'), street, street, data.get('area'),
-        data.get('area_po'), data.get('taluk'), city, city, data.get('state'), pincode, pincode,
-        data.get('country', 'India'), data.get('ethnic_origin'), aadhar_number, data.get('abha_number'),
-        data.get('blood_group'), data.get('marital_status'), data.get('occupation'), data.get('religion'),
-        data.get('nationality', 'Indian'), data.get('emergency_contact_name'), data.get('emergency_contact_phone'),
-        data.get('emergency_contact_relation'), data.get('fax'), data.get('family_doctor'), data.get('referred_by'),
-        data.get('registration_date'), data.get('referred_by_doctor_id'), patient_id
-    ))
-    
-    conn.commit()
-    updated = conn.execute('SELECT * FROM patients WHERE id = ?', (patient_id,)).fetchone()
-    conn.close()
-    return {"success": True, "data": _map_patient_row(updated)}
+    try:
+        cursor.execute('''
+            UPDATE patients SET
+                patient_id = ?, salutation = ?, first_name = ?, middle_name = ?, last_name = ?, gender = ?,
+                age = ?, dob = ?, mobile = ?, phone1 = ?, phone2 = ?, email = ?,
+                address = ?, street = ?, area = ?, area_po = ?, taluk = ?, city = ?, district_city = ?,
+                state = ?, pincode = ?, zip_code = ?, country = ?, ethnic_origin = ?, aadhar_number = ?,
+                abha_number = ?, blood_group = ?, marital_status = ?, occupation = ?,
+                religion = ?, nationality = ?, emergency_contact_name = ?,
+                emergency_contact_phone = ?, emergency_contact_relation = ?, fax = ?, family_doctor = ?,
+                referred_by = ?, registration_date = ?, referred_by_doctor_id = ?, custom_data = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (
+            data.get('patient_id'), data.get('salutation'), data.get('first_name'), data.get('middle_name'),
+            data.get('last_name'), data.get('gender'), age, data.get('dob'), data.get('mobile'),
+            data.get('phone1'), data.get('phone2'), data.get('email'), street, street, data.get('area'),
+            data.get('area_po'), data.get('taluk'), city, city, data.get('state'), pincode, pincode,
+            data.get('country', 'India'), data.get('ethnic_origin'), aadhar_number, data.get('abha_number'),
+            data.get('blood_group'), data.get('marital_status'), data.get('occupation'), data.get('religion'),
+            data.get('nationality', 'Indian'), data.get('emergency_contact_name'), data.get('emergency_contact_phone'),
+            data.get('emergency_contact_relation'), data.get('fax'), data.get('family_doctor'), data.get('referred_by'),
+            data.get('registration_date'), data.get('referred_by_doctor_id'), json.dumps(data.get('custom_fields') or {}), patient_id
+        ))
+
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Patient not found")
+
+        conn.commit()
+        updated = conn.execute('SELECT * FROM patients WHERE id = ?', (patient_id,)).fetchone()
+        conn.close()
+        return {"success": True, "data": _map_patient_row(updated)}
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Patient ID already exists")
 
 @app.delete('/api/patients/{patient_id}')
 def delete_patient(patient_id: int):
@@ -516,14 +743,14 @@ def get_all_visits():
     conn = get_db()
     visits = conn.execute('SELECT * FROM visits ORDER BY id DESC').fetchall()
     conn.close()
-    return {"success": True, "data": [dict(v) for v in visits]}
+    return {"success": True, "data": [_map_visit_row(v) for v in visits]}
 
 @app.get('/api/patients/{patient_id}/visits')
 def get_visits(patient_id: int):
     conn = get_db()
     visits = conn.execute('SELECT * FROM visits WHERE patient_id = ? ORDER BY id DESC', (patient_id,)).fetchall()
     conn.close()
-    return {"success": True, "data": [dict(v) for v in visits]}
+    return {"success": True, "data": [_map_visit_row(v) for v in visits]}
 
 @app.post('/api/patients/{patient_id}/visits')
 def add_visit(patient_id: int, data: dict):
@@ -536,21 +763,32 @@ def add_visit(patient_id: int, data: dict):
     diagnosis = data.get('diagnosis', '')
     notes = data.get('notes', '')
     referral_doctor = data.get('referral_doctor', '')
+    scan_type = data.get('scan_type') or 'Fetal Echo'
+    report_template_id = data.get('report_template_id', '')
+    documentation_name = data.get('documentation_name', '')
+    documentation_path = data.get('documentation_path', '')
+    custom_data = json.dumps(data.get('custom_fields') or {})
     image_count = int(data.get('image_count', 0)) if str(data.get('image_count', 0)).isdigit() else 0
     avi = int(data.get('avi', 0)) if str(data.get('avi', 0)).isdigit() else 0
     pregnancy = int(data.get('pregnancy', 0)) if str(data.get('pregnancy', 0)).isdigit() else 0
     ob = data.get('ob', '')
     
     cursor.execute('''
-        INSERT INTO visits (patient_id, visit_date, visit_type, doctor_id, diagnosis, notes, referral_doctor, image_count, avi, pregnancy, ob)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (patient_id, visit_date, visit_type, doctor_id, diagnosis, notes, referral_doctor, image_count, avi, pregnancy, ob))
+        INSERT INTO visits (
+            patient_id, visit_date, visit_type, doctor_id, diagnosis, notes, referral_doctor,
+            scan_type, report_template_id, documentation_name, documentation_path, custom_data, image_count, avi, pregnancy, ob
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        patient_id, visit_date, visit_type, doctor_id, diagnosis, notes, referral_doctor,
+        scan_type, report_template_id, documentation_name, documentation_path, custom_data, image_count, avi, pregnancy, ob
+    ))
     
     visit_id = cursor.lastrowid
     conn.commit()
     inserted = conn.execute('SELECT * FROM visits WHERE id = ?', (visit_id,)).fetchone()
     conn.close()
-    return {"success": True, "data": dict(inserted)}
+    return {"success": True, "data": _map_visit_row(inserted)}
 
 @app.put('/api/patients/{patient_id}/visits/{visit_id}')
 def update_visit(patient_id: int, visit_id: int, data: dict):
@@ -560,11 +798,16 @@ def update_visit(patient_id: int, visit_id: int, data: dict):
     cursor.execute('''
         UPDATE visits SET
             visit_date = ?, visit_type = ?, doctor_id = ?, diagnosis = ?, notes = ?,
-            referral_doctor = ?, image_count = ?, avi = ?, pregnancy = ?, ob = ?, updated_at = CURRENT_TIMESTAMP
+            referral_doctor = ?, scan_type = ?, report_template_id = ?, documentation_name = ?, documentation_path = ?, custom_data = ?,
+            image_count = ?, avi = ?, pregnancy = ?, ob = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND patient_id = ?
     ''', (
         data.get('visit_date'), data.get('visit_type'), data.get('doctor_id'),
         data.get('diagnosis'), data.get('notes'), data.get('referral_doctor'),
+        data.get('scan_type', 'Fetal Echo'), data.get('report_template_id', ''),
+        data.get('documentation_name', ''),
+        data.get('documentation_path', ''),
+        json.dumps(data.get('custom_fields') or {}),
         data.get('image_count', 0), data.get('avi', 0), data.get('pregnancy', 0),
         data.get('ob', ''), visit_id, patient_id
     ))
@@ -572,7 +815,7 @@ def update_visit(patient_id: int, visit_id: int, data: dict):
     conn.commit()
     updated = conn.execute('SELECT * FROM visits WHERE id = ?', (visit_id,)).fetchone()
     conn.close()
-    return {"success": True, "data": dict(updated)}
+    return {"success": True, "data": _map_visit_row(updated)}
 
 @app.delete('/api/patients/{patient_id}/visits/{visit_id}')
 def delete_visit(patient_id: int, visit_id: int):
@@ -589,7 +832,7 @@ def get_scans():
     conn = get_db()
     scans = conn.execute('SELECT * FROM scans ORDER BY id DESC').fetchall()
     conn.close()
-    return {"success": True, "data": [dict(s) for s in scans]}
+    return {"success": True, "data": [_scan_to_dict(s) for s in scans]}
 
 @app.get('/api/scans/{scan_id}')
 def get_scan(scan_id: int):
@@ -598,14 +841,14 @@ def get_scan(scan_id: int):
     conn.close()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
-    return {"success": True, "data": dict(scan)}
+    return {"success": True, "data": _scan_to_dict(scan)}
 
 @app.get('/api/scans/patient/{patient_id}')
 def get_scans_by_patient(patient_id: int):
     conn = get_db()
     scans = conn.execute('SELECT * FROM scans WHERE patient_id = ? ORDER BY id DESC', (patient_id,)).fetchall()
     conn.close()
-    return {"success": True, "data": [dict(s) for s in scans]}
+    return {"success": True, "data": [_scan_to_dict(s) for s in scans]}
 
 @app.post('/api/scans')
 def create_scan(data: dict):
@@ -634,29 +877,31 @@ def create_scan(data: dict):
     typedBy = data.get('typedBy', '')
     reviewedBy = data.get('reviewedBy', '')
     icdCode = data.get('icdCode', '')
+    report_data = data.get('fetal_echo_report') or data.get('adult_echo_report') or data.get('pediatric_echo_report') or data.get('report_data') or {}
     
     cursor.execute('''
         INSERT INTO scans (
             patient_id, patient_display_id, visit_id, scan_type, scan_date, findings, conclusion, status,
             abnormal, ambiguity, growthAbnormality, normal, normalVariant, indication, diagnosis,
-            referralDoctor, primaryConsultant, signedByLeft, signedByRight, typedBy, reviewedBy, icdCode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            referralDoctor, primaryConsultant, signedByLeft, signedByRight, typedBy, reviewedBy, icdCode, report_data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         patient_id, patient_display_id, visit_id, scan_type, scan_date, findings, conclusion, status,
         abnormal, ambiguity, growthAbnormality, normal, normalVariant, indication, diagnosis,
-        referralDoctor, primaryConsultant, signedByLeft, signedByRight, typedBy, reviewedBy, icdCode
+        referralDoctor, primaryConsultant, signedByLeft, signedByRight, typedBy, reviewedBy, icdCode, json.dumps(report_data)
     ))
     
     scan_id = cursor.lastrowid
     conn.commit()
     inserted = conn.execute('SELECT * FROM scans WHERE id = ?', (scan_id,)).fetchone()
     conn.close()
-    return {"success": True, "data": dict(inserted)}
+    return {"success": True, "data": _scan_to_dict(inserted)}
 
 @app.put('/api/scans/{scan_id}')
 def update_scan(scan_id: int, data: dict):
     conn = get_db()
     cursor = conn.cursor()
+    report_data = data.get('fetal_echo_report') or data.get('adult_echo_report') or data.get('pediatric_echo_report') or data.get('report_data') or {}
     
     cursor.execute('''
         UPDATE scans SET
@@ -664,7 +909,7 @@ def update_scan(scan_id: int, data: dict):
             findings = ?, conclusion = ?, status = ?, abnormal = ?, ambiguity = ?,
             growthAbnormality = ?, normal = ?, normalVariant = ?, indication = ?, diagnosis = ?,
             referralDoctor = ?, primaryConsultant = ?, signedByLeft = ?, signedByRight = ?,
-            typedBy = ?, reviewedBy = ?, icdCode = ?, updated_at = CURRENT_TIMESTAMP
+            typedBy = ?, reviewedBy = ?, icdCode = ?, report_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     ''', (
         data.get('patient_id'), data.get('patient_display_id'), data.get('visit_id'),
@@ -673,13 +918,13 @@ def update_scan(scan_id: int, data: dict):
         1 if data.get('growthAbnormality') else 0, 1 if data.get('normal') else 0,
         1 if data.get('normalVariant') else 0, data.get('indication'), data.get('diagnosis'),
         data.get('referralDoctor'), data.get('primaryConsultant'), data.get('signedByLeft'),
-        data.get('signedByRight'), data.get('typedBy'), data.get('reviewedBy'), data.get('icdCode'), scan_id
+        data.get('signedByRight'), data.get('typedBy'), data.get('reviewedBy'), data.get('icdCode'), json.dumps(report_data), scan_id
     ))
     
     conn.commit()
     updated = conn.execute('SELECT * FROM scans WHERE id = ?', (scan_id,)).fetchone()
     conn.close()
-    return {"success": True, "data": dict(updated)}
+    return {"success": True, "data": _scan_to_dict(updated)}
 
 @app.delete('/api/scans/{scan_id}')
 def delete_scan(scan_id: int):
@@ -807,6 +1052,12 @@ def get_settings():
                 res['imageConfig'] = json.loads(res['imageConfig'])
             except:
                 pass
+        if res.get('configuration_json') and isinstance(res['configuration_json'], str):
+            try:
+                res.update(json.loads(res['configuration_json']))
+            except (TypeError, json.JSONDecodeError):
+                pass
+        res.pop('configuration_json', None)
         return {"success": True, "data": res}
     return {"success": True, "data": {}}
 
@@ -816,14 +1067,14 @@ def get_next_patient_id():
     settings = conn.execute('SELECT next_number, prefix, pad_length FROM settings WHERE id = 1').fetchone()
     if settings:
         next_num = settings['next_number']
-        prefix = settings['prefix'] if settings['prefix'] is not None else 'PAT'
+        prefix = settings['prefix'] if settings['prefix'] is not None else 'TM'
         pad_len = settings['pad_length'] if settings['pad_length'] is not None else 6
         patient_id = f"{prefix}{str(next_num).zfill(pad_len)}"
         conn.close()
         return {"success": True, "data": {"patient_id": patient_id}}
     
     count = conn.execute('SELECT COUNT(*) FROM patients').fetchone()[0]
-    patient_id = f"PAT{str(count + 1).zfill(6)}"
+    patient_id = f"TM{str(count + 1).zfill(6)}"
     conn.close()
     return {"success": True, "data": {"patient_id": patient_id}}
 
@@ -835,17 +1086,27 @@ def save_settings(data: dict):
     if 'imageConfig' in data and isinstance(data['imageConfig'], dict):
         data['imageConfig'] = json.dumps(data['imageConfig'])
         
-    existing = conn.execute('SELECT id FROM settings WHERE id = 1').fetchone()
+    existing = conn.execute('SELECT id, configuration_json FROM settings WHERE id = 1').fetchone()
     
     # Filter keys matching settings columns
     cursor.execute("PRAGMA table_info(settings)")
     valid_cols = [c[1] for c in cursor.fetchall() if c[1] != 'id']
-    filtered_data = {k: v for k, v in data.items() if k in valid_cols}
+    filtered_data = {k: v for k, v in data.items() if k in valid_cols and k != 'configuration_json'}
+    extra_data = {k: v for k, v in data.items() if k not in valid_cols}
+    existing_extra = {}
+    if existing and existing['configuration_json']:
+        try:
+            existing_extra = json.loads(existing['configuration_json'])
+        except (TypeError, json.JSONDecodeError):
+            existing_extra = {}
+    if extra_data:
+        existing_extra.update(extra_data)
+    filtered_data['configuration_json'] = json.dumps(existing_extra)
     
     if existing:
         if filtered_data:
             set_clause = ', '.join([f"{key} = ?" for key in filtered_data.keys()])
-            values = list(filtered_data.values()) + [1]
+            values = list(filtered_data.values())
             cursor.execute(f'UPDATE settings SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = 1', values)
     else:
         if filtered_data:
@@ -859,7 +1120,14 @@ def save_settings(data: dict):
     conn.commit()
     updated = conn.execute('SELECT * FROM settings WHERE id = 1').fetchone()
     conn.close()
-    return {"success": True, "message": "Settings saved", "data": dict(updated) if updated else {}}
+    result = dict(updated) if updated else {}
+    if result.get('configuration_json'):
+        try:
+            result.update(json.loads(result['configuration_json']))
+        except (TypeError, json.JSONDecodeError):
+            pass
+    result.pop('configuration_json', None)
+    return {"success": True, "message": "Settings saved", "data": result}
 
 # Report Templates Endpoints
 @app.get('/api/report-templates')
@@ -1136,19 +1404,99 @@ def delete_resource(resource: str, item_id: int):
 @app.post('/api/media-upload')
 async def upload_media(file: UploadFile = File(...)):
     try:
-        uploads_dir = os.path.join(BASE_DIR, 'uploads')
-        os.makedirs(uploads_dir, exist_ok=True)
-        
-        file_path = os.path.join(uploads_dir, file.filename)
+        os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+        original_name = os.path.basename(file.filename or 'document')
+        stored_name = f"{uuid.uuid4().hex}_{original_name}"
+        file_path = os.path.join(UPLOADS_DIR, stored_name)
         with open(file_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
-        
-        rel_path = f"uploads/{file.filename}"
-        return {"success": True, "data": {"filename": file.filename, "path": rel_path, "url": rel_path}}
+
+        rel_path = f"/uploads/{stored_name}"
+        return {"success": True, "data": {"filename": original_name, "path": rel_path, "url": rel_path, "size": len(content)}}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
+@app.post('/api/report-email')
+def deliver_report_email(data: dict):
+    """Send a generated report when SMTP is configured through environment variables.
+
+    SMTP credentials deliberately stay outside the SQLite settings record. Configure
+    SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM on the server.
+    """
+    recipient = (data.get('recipient') or '').strip()
+    report_title = (data.get('report_title') or 'Echo report').strip()
+    report_content = data.get('report_content') or ''
+    if not recipient:
+        raise HTTPException(status_code=400, detail='A report recipient is required')
+
+    smtp_host = os.environ.get('SMTP_HOST')
+    smtp_username = os.environ.get('SMTP_USERNAME')
+    smtp_password = os.environ.get('SMTP_PASSWORD')
+    smtp_from = os.environ.get('SMTP_FROM') or smtp_username
+    if not all([smtp_host, smtp_username, smtp_password, smtp_from]):
+        raise HTTPException(status_code=503, detail='Email delivery is not configured. Set SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM on the server.')
+
+    message = EmailMessage()
+    message['Subject'] = report_title
+    message['From'] = smtp_from
+    message['To'] = recipient
+    message.set_content(f'{report_title}\n\nThe generated report is attached as an HTML document.')
+    safe_attachment_name = ''.join(character if character.isalnum() or character in ' -_' else '_' for character in report_title).strip() or 'echo-report'
+    message.add_attachment(report_content, subtype='html', filename=f'{safe_attachment_name}.html')
+
+    try:
+        with smtplib.SMTP(smtp_host, int(os.environ.get('SMTP_PORT', '587')), timeout=20) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+            server.send_message(message)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f'Email delivery failed: {str(error)}')
+
+    return {"success": True, "message": f"Report sent to {recipient}"}
+
+@app.post('/api/device-connection-test')
+def test_device_connection(data: dict):
+    """Validate that a configured echo/medical device endpoint is reachable by TCP."""
+    host = (data.get('host') or data.get('deviceEndpoint') or '').strip()
+    try:
+        port = int(data.get('port') or data.get('devicePort') or 0)
+    except (TypeError, ValueError):
+        port = 0
+    if not host or not (1 <= port <= 65535):
+        raise HTTPException(status_code=400, detail='Enter a valid device endpoint and port before testing.')
+    try:
+        with socket.create_connection((host, port), timeout=5):
+            pass
+    except OSError as error:
+        raise HTTPException(status_code=502, detail=f'Device connection failed: {error}')
+    return {"success": True, "message": f"Connected to {host}:{port}"}
+
+app.mount('/uploads', StaticFiles(directory=UPLOADS_DIR, check_dir=False), name='uploads')
+
+@app.get('/{full_path:path}', include_in_schema=False)
+def serve_frontend(full_path: str):
+    if full_path.startswith('api/'):
+        raise HTTPException(status_code=404, detail='API endpoint not found')
+
+    dist_root = os.path.realpath(FRONTEND_DIST)
+    requested_path = os.path.realpath(os.path.join(dist_root, full_path))
+    if requested_path.startswith(f'{dist_root}{os.sep}') and os.path.isfile(requested_path):
+        return FileResponse(requested_path)
+
+    index_path = os.path.join(dist_root, 'index.html')
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+
+    if not full_path:
+        return JSONResponse({
+            "message": "Echo AI Cardiology API Server",
+            "status": "online",
+            "version": "1.0.0",
+        })
+    raise HTTPException(status_code=404, detail='Frontend build not found')
+
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8002)
+    uvicorn.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', '8002')))

@@ -1,47 +1,913 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Eye, Plus, Save, Trash2, Upload, UserRound } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Eye, Plus, Save, Trash2, Upload } from 'lucide-react'
 import { Field, FieldGrid, Section, Tabs, Workspace } from '../components/WorkspaceUI'
-import AddableSelect from '../components/AddableSelect'
 import { workspaceService } from '../api/workspaceService'
 
-const tabs=['Company','Sonographers','Patient ID','Preferences','Report configuration','Rule of Three']
-const defaults={companyName:'',shortName:'',registrationNo:'',taxId:'',comments:'',inactive:false,street:'',area:'',areaPo:'',zipCode:'',city:'',state:'',country:'',phone:'',mobile:'',fax:'',email:'',idMode:'Manual ID',prefix:'',nextNumber:1,padLength:6,autoStart:false,autoBackup:false,centreName:'',dateFormat:'DD/MM/YYYY',font:'Arial',fontSize:'10',reportType:'Report only',normalComments:''}
-const f=(key,label,type='text',options,addable=false)=>({key,label,type,options,addable})
+const tabs = [
+  'Company',
+  'Sonographers',
+  'Patient ID',
+  'Preferences',
+  'Report configuration',
+  'Device connections',
+  'Custom fields',
+  'Signatures',
+  'Image configuration',
+  'General configuration',
+  'Rule of Three',
+]
 
-export default function Settings(){
- const [tab,setTab]=useState('Company'),[data,setData]=useState(defaults),[users,setUsers]=useState([]),[templates,setTemplates]=useState([]),[saved,setSaved]=useState(false)
- useEffect(()=>{Promise.all([workspaceService.getSettings(),workspaceService.list('users'),workspaceService.getTemplates()]).then(([settings,userResult,templateResult])=>{setData({...defaults,...(settings.data||{})});setUsers(userResult.data||[]);setTemplates(templateResult.data||[])})},[])
- const save=async()=>{await workspaceService.saveSettings(data);setSaved(true);setTimeout(()=>setSaved(false),1800)}
- return <Workspace title="Settings & administration" description="Company, users, identifiers, preferences, report styles, and image templates." actions={<><button className="primary-button" onClick={save}><Save className="h-4 w-4"/>Save settings</button>{saved&&<span className="text-sm font-medium text-emerald-700">Saved to database</span>}</>}><Tabs items={tabs} value={tab} onChange={setTab}/>
- {tab==='Company'&&<Company data={data} setData={setData}/>}
- {tab==='Sonographers'&&<Sonographers users={users} setUsers={setUsers}/>}
- {tab==='Patient ID'&&<PatientId data={data} setData={setData}/>}
- {tab==='Preferences'&&<Preferences data={data} setData={setData}/>}
- {tab==='Report configuration'&&<ReportConfig data={data} setData={setData}/>}
- {tab==='Rule of Three'&&<RuleOfThree templates={templates} setTemplates={setTemplates}/>}
- </Workspace>
+const defaults = {
+  companyName: '',
+  shortName: '',
+  registrationNo: '',
+  taxId: '',
+  comments: '',
+  inactive: false,
+  street: '',
+  area: '',
+  areaPo: '',
+  zipCode: '',
+  city: '',
+  state: '',
+  country: '',
+  phone: '',
+  mobile: '',
+  fax: '',
+  email: '',
+  idMode: 'Manual ID',
+  prefix: '',
+  nextNumber: 1,
+  padLength: 6,
+  autoStart: false,
+  autoBackup: false,
+  centreName: '',
+  dateFormat: 'DD/MM/YYYY',
+  font: 'Arial',
+  fontSize: '10',
+  reportType: 'Report only',
+  normalComments: '',
+  deviceVendor: '',
+  deviceEndpoint: '',
+  devicePort: '',
+  deviceAETitle: '',
+  deviceEnabled: false,
+  customFieldName: '',
+  customFieldType: 'Text',
+  customFieldModule: 'Patients',
+  customFieldOptions: '',
+  customFieldRequired: false,
+  customFields: [],
+  leftDoctorName: '',
+  rightDoctorName: '',
+  doctorSignatureMode: 'Typed name',
+  signatureUploadName: '',
+  signatures: [],
+  reportHeaderText: '',
+  reportFooterText: '',
+  reportHeaderPlacement: 'Center',
+  reportFooterPlacement: 'Center',
+  outputImageWidth: '600',
+  outputImageHeight: '450',
+  outputImageColumns: '4',
+  outputImageRows: '2',
+  defaultReportRecipient: '',
+  autoEmailReports: false,
+  disclaimerText: '',
+  icdEnabledCardiologyOnly: true,
+
 }
 
-function Company({data,setData}){return <div className="grid gap-4 xl:grid-cols-[1fr_340px]"><Section title="Company master"><FieldGrid fields={[f('companyName','Company name'),f('shortName','Short name'),f('registrationNo','Registration number'),f('taxId','GST / Tax number'),f('comments','Comments','textarea'),f('street','Street'),f('area','Area'),f('areaPo','Area (P.O.)'),f('zipCode','Zip code'),f('city','City','select',[],true),f('state','State','select',[],true),f('country','Country','select',['Australia','India','USA','UK'],true),f('phone','Phone'),f('mobile','Mobile'),f('fax','Fax'),f('email','Email','email'),f('inactive','Inactive','checkbox')]} data={data} setData={setData}/></Section><Section title="Company record"><div className="rounded-xl border border-primary-200 bg-primary-50 p-5"><p className="text-lg font-semibold text-primary-950">{data.companyName||'Company name'}</p><p className="mt-1 text-sm text-primary-700">{[data.city,data.state,data.country].filter(Boolean).join(', ')||'Address not entered'}</p><p className="mt-4 text-xs text-primary-700">Registration: {data.registrationNo||'—'}</p></div></Section></div>}
+const f = (key, label, type = 'text', options, addable = false) => ({ key, label, type, options, addable })
 
-const blankUser={first_name:'',last_name:'',middle_name:'',initials:'',user_name:'',password:'',confirm_password:'',designation:'',registration_no:'',user_type:'Sonographer',mobile:'',email:'',inactive:false,set_default:false,signature:'',roles:[],rights:{}}
-const modules=['Patient Demography','Fetal Echo','Pediatric Echo','Adult Echo','Images','Template Report','Referral Letter','Settings']
-const roles=['Primary Consultant','Second Consultant','Report Signed By (L)','Report Signed By (R)','Report Typed By','Auditor']
-function Sonographers({users,setUsers}){
- const [form,setForm]=useState(blankUser),[selected,setSelected]=useState('')
- const choose=(user)=>{setSelected(user.id);setForm({...blankUser,...user,password:'',confirm_password:''})}
- const save=async()=>{const payload={...form};delete payload.confirm_password;delete payload.password;if(selected){const result=await workspaceService.update('users',selected,payload);setUsers(users.map((u)=>u.id===selected?result.data:u))}else{const result=await workspaceService.create('users',payload);setUsers([...users,result.data]);setSelected(result.data.id)} }
- const remove=async()=>{if(!selected)return;await workspaceService.remove('users',selected);setUsers(users.filter((u)=>u.id!==selected));setSelected('');setForm(blankUser)}
- const toggleRole=(role)=>setForm({...form,roles:form.roles.includes(role)?form.roles.filter((item)=>item!==role):[...form.roles,role]})
- const right=(module,key)=>setForm({...form,rights:{...form.rights,[module]:{...(form.rights[module]||{}),[key]:!(form.rights[module]||{})[key]}}})
- return <div className="space-y-4"><Section title="Sonographer / Sonologist"><div className="mb-4 flex flex-wrap gap-2"><button className="primary-button" onClick={save}><Save className="h-4 w-4"/>Save user</button><button className="secondary-button" onClick={()=>{setSelected('');setForm(blankUser)}}><Plus className="h-4 w-4"/>New</button><button className="secondary-button text-red-700" onClick={remove} disabled={!selected}><Trash2 className="h-4 w-4"/>Delete</button></div><FieldGrid fields={[f('first_name','First name'),f('last_name','Last name'),f('middle_name','Middle name'),f('initials','Initials'),f('user_name','User name'),f('registration_no','Registration number'),f('designation','Designation','select',['Sonographer','Cardiac Sonographer','Consultant','Specialist'],true),f('user_type','User type','select',['Doctor','Sonographer','Administrator','Other user']),f('mobile','Mobile'),f('email','Email','email'),f('set_default','Set default user','checkbox'),f('inactive','Inactive','checkbox')]} data={form} setData={setForm}/><div className="mt-4 grid gap-4 lg:grid-cols-2"><Section title="Signature"><label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300"><Upload className="mb-2 h-6 w-6"/>Click to add signature<input type="file" accept="image/*" className="hidden" onChange={(e)=>setForm({...form,signature:e.target.files?.[0]?.name||''})}/><span className="text-xs text-slate-500">{form.signature}</span></label></Section><Section title="Roles"><div className="grid gap-2 sm:grid-cols-2">{roles.map((role)=><label key={role} className="flex gap-2 text-sm"><input type="checkbox" checked={form.roles.includes(role)} onChange={()=>toggleRole(role)}/>{role}</label>)}</div></Section></div></Section><Section title="User rights"><div className="overflow-auto"><table className="data-table"><thead><tr><th>Module</th><th>Read only</th><th>Save</th><th>Delete</th></tr></thead><tbody>{modules.map((module)=><tr key={module}><td>{module}</td>{['read','save','delete'].map((key)=><td key={key}><input type="checkbox" checked={Boolean(form.rights[module]?.[key])} onChange={()=>right(module,key)}/></td>)}</tr>)}</tbody></table></div></Section><Section title="Saved users"><div className="overflow-auto"><table className="data-table"><thead><tr><th>Name</th><th>Initials</th><th>User name</th><th>Designation</th><th>Inactive</th></tr></thead><tbody>{users.map((user)=><tr key={user.id} onDoubleClick={()=>choose(user)} onClick={()=>choose(user)} className={selected===user.id?'selected-row':''}><td>{user.first_name} {user.last_name}</td><td>{user.initials}</td><td>{user.user_name}</td><td>{user.designation}</td><td>{user.inactive?'Yes':'No'}</td></tr>)}</tbody></table></div></Section></div>
+export default function Settings() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+
+  const [tab, setTab] = useState(tabParam && tabs.includes(tabParam) ? tabParam : 'Company')
+  const [data, setData] = useState(defaults)
+  const [users, setUsers] = useState([])
+  const [templates, setTemplates] = useState([])
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (tabParam && tabs.includes(tabParam)) {
+      setTab(tabParam)
+    }
+  }, [tabParam])
+
+  useEffect(() => {
+    Promise.all([
+      workspaceService.getSettings(),
+      workspaceService.list('users'),
+      workspaceService.getTemplates(),
+    ]).then(([settings, userResult, templateResult]) => {
+      setData({ ...defaults, ...(settings.data || {}) })
+      setUsers(userResult.data || [])
+      setTemplates(templateResult.data || [])
+    })
+  }, [])
+
+  const handleTabChange = (newTab) => {
+    setTab(newTab)
+    setSearchParams({ tab: newTab })
+  }
+
+  const save = async () => {
+    await workspaceService.saveSettings(data)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1800)
+  }
+
+  return (
+    <Workspace
+      title="Settings & administration"
+      description="Company, users, identifiers, preferences, report styles, and templates."
+      actions={
+        <>
+          <button className="primary-button" onClick={save}>
+            <Save className="h-4 w-4" /> Save settings
+          </button>
+          {saved && <span className="text-sm font-medium text-emerald-700">Saved to database</span>}
+        </>
+      }
+    >
+      <Tabs items={tabs} value={tab} onChange={handleTabChange} />
+
+      {tab === 'Company' && <Company data={data} setData={setData} />}
+      {tab === 'Sonographers' && <Sonographers users={users} setUsers={setUsers} />}
+      {tab === 'Patient ID' && <PatientId data={data} setData={setData} />}
+      {tab === 'Preferences' && <Preferences data={data} setData={setData} />}
+      {tab === 'Report configuration' && <ReportConfig data={data} setData={setData} />}
+      {tab === 'Device connections' && <DeviceConnections data={data} setData={setData} />}
+      {tab === 'Custom fields' && <CustomFields data={data} setData={setData} />}
+      {tab === 'Signatures' && <Signatures data={data} setData={setData} />}
+      {tab === 'Image configuration' && <ImageConfiguration data={data} setData={setData} />}
+      {tab === 'General configuration' && <GeneralConfiguration data={data} setData={setData} />}
+      {tab === 'Rule of Three' && <RuleOfThree templates={templates} setTemplates={setTemplates} />}
+    </Workspace>
+  )
 }
 
-function PatientId({data,setData}){const preview=data.idMode==='Manual ID'?'User should enter manually':`${data.prefix||''}${String(data.nextNumber||1).padStart(Number(data.padLength)||1,'0')}`;return <Section title="Options for patient serial number generation"><div className="grid gap-3 lg:grid-cols-2"><div className="space-y-2">{['Manual ID','Increase Serial No. one by one','Add zeros before Serial No.','Add alphabets and zeros before Serial No.','Custom Serial No.'].map((mode)=><label className="flex items-center gap-2 rounded-lg border p-3" key={mode}><input type="radio" checked={data.idMode===mode} onChange={()=>setData({...data,idMode:mode})}/>{mode}</label>)}</div><div><FieldGrid columns="lg:grid-cols-2" fields={[f('prefix','Prefix'),f('nextNumber','Next serial number','number'),f('padLength','Number length','number')]} data={data} setData={setData}/><div className="mt-5 rounded-lg bg-primary-50 p-5 text-primary-900">Preview: <strong>{preview}</strong></div></div></div></Section>}
+function Company({ data, setData }) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
+      <Section title="Company master">
+        <FieldGrid
+          fields={[
+            f('companyName', 'Company name'),
+            f('shortName', 'Short name'),
+            f('registrationNo', 'Registration number'),
+            f('taxId', 'GST / Tax number'),
+            f('comments', 'Comments', 'textarea'),
+            f('street', 'Street'),
+            f('area', 'Area'),
+            f('areaPo', 'Area (P.O.)'),
+            f('zipCode', 'Zip code'),
+            f('city', 'City', 'select', [], true),
+            f('state', 'State', 'select', [], true),
+            f('country', 'Country', 'select', ['Australia', 'India', 'USA', 'UK'], true),
+            f('phone', 'Phone'),
+            f('mobile', 'Mobile'),
+            f('fax', 'Fax'),
+            f('email', 'Email', 'email'),
+            f('inactive', 'Inactive', 'checkbox'),
+          ]}
+          data={data}
+          setData={setData}
+        />
+      </Section>
+      <Section title="Company record">
+        <div className="rounded-xl border border-primary-200 bg-primary-50 p-5">
+          <p className="text-lg font-semibold text-primary-950">{data.companyName || 'Company name'}</p>
+          <p className="mt-1 text-sm text-primary-700">
+            {[data.city, data.state, data.country].filter(Boolean).join(', ') || 'Address not entered'}
+          </p>
+          <p className="mt-4 text-xs text-primary-700">Registration: {data.registrationNo || '—'}</p>
+        </div>
+      </Section>
+    </div>
+  )
+}
 
-function Preferences({data,setData}){const [sub,setSub]=useState('General');const groups={General:[f('userWiseReport','User-wise report setting','checkbox'),f('autoStart','Auto-start DICOM service','checkbox'),f('autoBackup','Auto database backup','checkbox'),f('centreName','Centre ID/name'),f('lockCompleted','Lock completed reports','checkbox'),f('printQr','Print QR code in report','checkbox'),f('requireIndication','Indication required','checkbox'),f('requireConsultant','Primary consultant required','checkbox'),f('requireStatus','Investigation status required','checkbox'),f('referralOptional','Referred by not mandatory','checkbox'),f('hideSaveConfirmation','Hide save confirmation','checkbox'),f('hideDeleteConfirmation','Hide delete confirmation','checkbox'),f('hideDeleteReason','Hide reason-for-delete box','checkbox'),f('singleLogin','One-system login only','checkbox'),f('recordLocking','Prevent concurrent scan editing','checkbox'),f('editWindowDays','Non-admin edit window (days)','number')],Report:[f('dateFormat','Date format','select',['DD/MM/YYYY','MM/DD/YYYY','YYYY-MM-DD']),f('printAfterSave','Print after report save','checkbox'),f('defaultReportType','Default report type','select',['Report only','Report with images','With biometry graphs']),f('normalComments','Default normal comments','textarea')], 'HIS integration':[f('hisEnabled','Enable HIS integration','checkbox'),f('hisUrl','HIS endpoint'),f('hisApiKey','HIS API key'),f('sendCompleted','Send completed reports','checkbox')],Appearance:[f('theme','Theme','select',['Light','Dark','System']),f('density','Display density','select',['Comfortable','Compact']),f('fontScale','Font scale','select',['Small','Normal','Large'])],'Set default':[f('defaultScanType','Default scan type','select',['Adult Echo','Pediatric Echo','Fetal Echo']),f('defaultCountry','Default country','select',['Australia','India','USA','UK'],true),f('defaultReferral','Default referral doctor')]};return <><Tabs items={Object.keys(groups)} value={sub} onChange={setSub}/><Section title={`${sub} preferences`}><FieldGrid fields={groups[sub]} data={data} setData={setData}/></Section></>}
+const blankUser = {
+  first_name: '',
+  last_name: '',
+  middle_name: '',
+  initials: '',
+  user_name: '',
+  password: '',
+  confirm_password: '',
+  designation: '',
+  registration_no: '',
+  user_type: 'Sonographer',
+  mobile: '',
+  email: '',
+  inactive: false,
+  set_default: false,
+  signature: '',
+  roles: [],
+  rights: {},
+}
 
-const reportSections=['Header Line 1','Header Line 2','Header Line 3','Patient Demography','Case History','ICD-10','Echo Details','Measurements','Doppler','Impression','Images','Disclaimer','Footer']
-function ReportConfig({data,setData}){const rows=data.reportSections||reportSections.map((name)=>({name,text:'',print:true,font:'Arial',size:'10',bold:false,italic:false,underline:false,align:'Left',color:'Black'}));const update=(index,key,value)=>setData({...data,reportSections:rows.map((row,i)=>i===index?{...row,[key]:value}:row)});return <div className="space-y-4"><Section title="Report configuration"><FieldGrid fields={[f('hospitalAddress','Hospital address','textarea'),f('font','Default font','select',['Arial','Calibri','Times New Roman']),f('fontSize','Default size','select',['8','9','10','11','12','14']),f('titleSetting','Titles setting','select',['Default','Detailed setting']),f('commentsSetting','Comments setting','select',['Always No','Always Yes','Custom']),f('pndtFont','PNDT font','select',['Arial','Calibri','Times New Roman'])]} data={data} setData={setData}/></Section><Section title="Per-section font styles"><div className="overflow-auto"><table className="data-table min-w-[1100px]"><thead><tr><th>Section</th><th>Text</th><th>Print</th><th>Font</th><th>Size</th><th>Bold</th><th>Italic</th><th>Underline</th><th>Align</th><th>Colour</th></tr></thead><tbody>{rows.map((row,index)=><tr key={row.name}><td>{row.name}</td><td><input className="field-control" value={row.text} onChange={(e)=>update(index,'text',e.target.value)}/></td><td><input type="checkbox" checked={row.print} onChange={(e)=>update(index,'print',e.target.checked)}/></td><td><select className="field-control" value={row.font} onChange={(e)=>update(index,'font',e.target.value)}>{['Arial','Calibri','Times New Roman'].map((v)=><option key={v}>{v}</option>)}</select></td><td><input className="field-control w-20" value={row.size} onChange={(e)=>update(index,'size',e.target.value)}/></td>{['bold','italic','underline'].map((key)=><td key={key}><input type="checkbox" checked={row[key]} onChange={(e)=>update(index,key,e.target.checked)}/></td>)}<td><select className="field-control" value={row.align} onChange={(e)=>update(index,'align',e.target.value)}>{['Left','Center','Right'].map((v)=><option key={v}>{v}</option>)}</select></td><td><input className="field-control" value={row.color} onChange={(e)=>update(index,'color',e.target.value)}/></td></tr>)}</tbody></table></div></Section></div>}
+const modules = [
+  'Patient Demography',
+  'Fetal Echo',
+  'Pediatric Echo',
+  'Adult Echo',
+  'Images',
+  'Template Report',
+  'Referral Letter',
+  'Settings',
+]
+const roles = [
+  'Primary Consultant',
+  'Second Consultant',
+  'Report Signed By (L)',
+  'Report Signed By (R)',
+  'Report Typed By',
+  'Auditor',
+]
 
-function RuleOfThree({templates,setTemplates}){const blank={title:'',title_type:'Fetal Echo',layout:'3 × 3',views:[]};const [form,setForm]=useState(blank),[selected,setSelected]=useState('');const count=Number(form.layout[0])**2;const save=async()=>{const payload={...form,scan_type:form.title_type};const result=selected?await workspaceService.updateTemplate(selected,payload):await workspaceService.createTemplate(payload);setTemplates(selected?templates.map((t)=>t.id===selected?result.data:t):[...templates,result.data]);setSelected(result.data.id)};const remove=async()=>{if(!selected)return;await workspaceService.deleteTemplate(selected);setTemplates(templates.filter((t)=>t.id!==selected));setSelected('');setForm(blank)};const assign=(index)=>{const name=prompt('Enter standard view name',form.views?.[index]||'');if(name!==null){const views=[...(form.views||[])];views[index]=name;setForm({...form,views})}};return <div className="grid gap-4 xl:grid-cols-[320px_1fr]"><div className="space-y-4"><Section title="Rule of Three master"><Field label="Title" value={form.title} onChange={(value)=>setForm({...form,title:value})}/><div className="mt-3"><Field label="Title type" type="select" value={form.title_type} onChange={(value)=>setForm({...form,title_type:value})} options={['Fetal Echo','Adult Echo','Pediatric Echo']}/></div><div className="mt-3"><Field label="Template" type="select" value={form.layout} onChange={(value)=>setForm({...form,layout:value,views:[]})} options={['2 × 2','3 × 3','4 × 4']}/></div><div className="mt-4 flex gap-2"><button className="primary-button" onClick={save}><Save className="h-4 w-4"/>Save</button><button className="secondary-button" onClick={()=>{setForm(blank);setSelected('')}}><Plus className="h-4 w-4"/>New</button><button className="secondary-button text-red-700" onClick={remove}><Trash2 className="h-4 w-4"/></button></div></Section><Section title="Saved templates"><div className="space-y-2">{templates.map((template)=><button key={template.id} onClick={()=>{setSelected(template.id);setForm({...blank,...template})}} className={`w-full rounded-lg border p-3 text-left ${selected===template.id?'border-primary-500 bg-primary-50':'border-slate-200'}`}><strong>{template.title||template.name||'Untitled'}</strong><div className="text-xs text-slate-500">{template.title_type||template.scan_type} · {template.layout}</div></button>)}</div></Section></div><Section title={form.title||'Rule of Three'} description="Click a frame to assign a standard view; images can later be placed into these positions from the report."><div className={`grid gap-3 ${form.layout.startsWith('2')?'grid-cols-2':form.layout.startsWith('4')?'grid-cols-4':'grid-cols-3'}`}>{Array.from({length:count}).map((_,index)=><button onClick={()=>assign(index)} key={index} className="flex aspect-video flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 text-xs text-slate-600 hover:border-primary-400 hover:bg-primary-50"><Eye className="mb-1 h-5 w-5"/>{form.views?.[index]||`Unassigned ${index+1}`}</button>)}</div></Section></div>}
+function Sonographers({ users, setUsers }) {
+  const [form, setForm] = useState(blankUser)
+  const [selected, setSelected] = useState('')
+
+  const choose = (user) => {
+    setSelected(user.id)
+    setForm({ ...blankUser, ...user, password: '', confirm_password: '' })
+  }
+
+  const save = async () => {
+    const payload = { ...form }
+    delete payload.confirm_password
+    delete payload.password
+    if (selected) {
+      const result = await workspaceService.update('users', selected, payload)
+      setUsers(users.map((u) => (u.id === selected ? result.data : u)))
+    } else {
+      const result = await workspaceService.create('users', payload)
+      setUsers([...users, result.data])
+      setSelected(result.data.id)
+    }
+  }
+
+  const remove = async () => {
+    if (!selected) return
+    await workspaceService.remove('users', selected)
+    setUsers(users.filter((u) => u.id !== selected))
+    setSelected('')
+    setForm(blankUser)
+  }
+
+  const toggleRole = (role) =>
+    setForm({
+      ...form,
+      roles: form.roles.includes(role)
+        ? form.roles.filter((item) => item !== role)
+        : [...form.roles, role],
+    })
+
+  const right = (module, key) =>
+    setForm({
+      ...form,
+      rights: {
+        ...form.rights,
+        [module]: {
+          ...(form.rights[module] || {}),
+          [key]: !(form.rights[module] || {})[key],
+        },
+      },
+    })
+
+  return (
+    <div className="space-y-4">
+      <Section title="Sonographer / Sonologist">
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button className="primary-button" onClick={save}>
+            <Save className="h-4 w-4" /> Save user
+          </button>
+          <button className="secondary-button" onClick={() => { setSelected(''); setForm(blankUser) }}>
+            <Plus className="h-4 w-4" /> New
+          </button>
+          <button className="secondary-button text-red-700" onClick={remove} disabled={!selected}>
+            <Trash2 className="h-4 w-4" /> Delete
+          </button>
+        </div>
+        <FieldGrid
+          fields={[
+            f('first_name', 'First name'),
+            f('last_name', 'Last name'),
+            f('middle_name', 'Middle name'),
+            f('initials', 'Initials'),
+            f('user_name', 'User name'),
+            f('registration_no', 'Registration number'),
+            f('designation', 'Designation', 'select', ['Sonographer', 'Cardiac Sonographer', 'Consultant', 'Specialist'], true),
+            f('user_type', 'User type', 'select', ['Doctor', 'Sonographer', 'Administrator', 'Other user']),
+            f('mobile', 'Mobile'),
+            f('email', 'Email', 'email'),
+            f('set_default', 'Set default user', 'checkbox'),
+            f('inactive', 'Inactive', 'checkbox'),
+          ]}
+          data={form}
+          setData={setForm}
+        />
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <Section title="Signature">
+            <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300">
+              <Upload className="mb-2 h-6 w-6" /> Click to add signature
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => setForm({ ...form, signature: e.target.files?.[0]?.name || '' })} />
+              <span className="text-xs text-slate-500">{form.signature}</span>
+            </label>
+          </Section>
+          <Section title="Roles">
+            <div className="grid gap-2 sm:grid-cols-2">
+              {roles.map((role) => (
+                <label key={role} className="flex gap-2 text-sm">
+                  <input type="checkbox" checked={form.roles.includes(role)} onChange={() => toggleRole(role)} />
+                  {role}
+                </label>
+              ))}
+            </div>
+          </Section>
+        </div>
+      </Section>
+
+      <Section title="User rights">
+        <div className="overflow-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Module</th>
+                <th>Read only</th>
+                <th>Save</th>
+                <th>Delete</th>
+              </tr>
+            </thead>
+            <tbody>
+              {modules.map((module) => (
+                <tr key={module}>
+                  <td>{module}</td>
+                  {['read', 'save', 'delete'].map((key) => (
+                    <td key={key}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.rights[module]?.[key])}
+                        onChange={() => right(module, key)}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section title="Saved users">
+        <div className="overflow-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Initials</th>
+                <th>User name</th>
+                <th>Designation</th>
+                <th>Inactive</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr
+                  key={user.id}
+                  onDoubleClick={() => choose(user)}
+                  onClick={() => choose(user)}
+                  className={selected === user.id ? 'selected-row' : ''}
+                >
+                  <td>{user.first_name} {user.last_name}</td>
+                  <td>{user.initials}</td>
+                  <td>{user.user_name}</td>
+                  <td>{user.designation}</td>
+                  <td>{user.inactive ? 'Yes' : 'No'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </div>
+  )
+}
+
+function PatientId({ data, setData }) {
+  const preview =
+    data.idMode === 'Manual ID'
+      ? 'User should enter manually'
+      : `${data.prefix || ''}${String(data.nextNumber || 1).padStart(Number(data.padLength) || 1, '0')}`
+
+  return (
+    <Section title="Options for patient serial number generation">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="space-y-2">
+          {[
+            'Manual ID',
+            'Increase Serial No. one by one',
+            'Add zeros before Serial No.',
+            'Add alphabets and zeros before Serial No.',
+            'Custom Serial No.',
+          ].map((mode) => (
+            <label className="flex items-center gap-2 rounded-lg border p-3" key={mode}>
+              <input
+                type="radio"
+                checked={data.idMode === mode}
+                onChange={() => setData({ ...data, idMode: mode })}
+              />
+              {mode}
+            </label>
+          ))}
+        </div>
+        <div>
+          <FieldGrid
+            columns="lg:grid-cols-2"
+            fields={[
+              f('prefix', 'Prefix'),
+              f('nextNumber', 'Next serial number', 'number'),
+              f('padLength', 'Number length', 'number'),
+            ]}
+            data={data}
+            setData={setData}
+          />
+          <div className="mt-5 rounded-lg bg-primary-50 p-5 text-primary-900">
+            Preview: <strong>{preview}</strong>
+          </div>
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+function Preferences({ data, setData }) {
+  const [sub, setSub] = useState('General')
+  const groups = {
+    General: [
+      f('userWiseReport', 'User-wise report setting', 'checkbox'),
+      f('autoStart', 'Auto-start DICOM service', 'checkbox'),
+      f('autoBackup', 'Auto database backup', 'checkbox'),
+      f('centreName', 'Centre ID/name'),
+      f('lockCompleted', 'Lock completed reports', 'checkbox'),
+      f('printQr', 'Print QR code in report', 'checkbox'),
+      f('requireIndication', 'Indication required', 'checkbox'),
+      f('requireConsultant', 'Primary consultant required', 'checkbox'),
+      f('requireStatus', 'Investigation status required', 'checkbox'),
+      f('referralOptional', 'Referred by not mandatory', 'checkbox'),
+      f('hideSaveConfirmation', 'Hide save confirmation', 'checkbox'),
+      f('hideDeleteConfirmation', 'Hide delete confirmation', 'checkbox'),
+      f('hideDeleteReason', 'Hide reason-for-delete box', 'checkbox'),
+      f('singleLogin', 'One-system login only', 'checkbox'),
+      f('recordLocking', 'Prevent concurrent scan editing', 'checkbox'),
+      f('editWindowDays', 'Non-admin edit window (days)', 'number'),
+    ],
+    Report: [
+      f('dateFormat', 'Date format', 'select', ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD']),
+      f('printAfterSave', 'Print after report save', 'checkbox'),
+      f('defaultReportType', 'Default report type', 'select', ['Report only', 'Report with images', 'With biometry graphs']),
+      f('normalComments', 'Default normal comments', 'textarea'),
+    ],
+    'HIS integration': [
+      f('hisEnabled', 'Enable HIS integration', 'checkbox'),
+      f('hisUrl', 'HIS endpoint'),
+      f('hisApiKey', 'HIS API key'),
+      f('sendCompleted', 'Send completed reports', 'checkbox'),
+    ],
+    Appearance: [
+      f('theme', 'Theme', 'select', ['Light', 'Dark', 'System']),
+      f('density', 'Display density', 'select', ['Comfortable', 'Compact']),
+      f('fontScale', 'Font scale', 'select', ['Small', 'Normal', 'Large']),
+    ],
+    'Set default': [
+      f('defaultScanType', 'Default scan type', 'select', ['Adult Echo', 'Pediatric Echo', 'Fetal Echo']),
+      f('defaultCountry', 'Default country', 'select', ['Australia', 'India', 'USA', 'UK'], true),
+      f('defaultReferral', 'Default referral doctor'),
+    ],
+  }
+  return (
+    <>
+      <Tabs items={Object.keys(groups)} value={sub} onChange={setSub} />
+      <Section title={`${sub} preferences`}>
+        <FieldGrid fields={groups[sub]} data={data} setData={setData} />
+      </Section>
+    </>
+  )
+}
+
+const reportSections = [
+  'Header Line 1',
+  'Header Line 2',
+  'Header Line 3',
+  'Patient Demography',
+  'Case History',
+  'ICD-10',
+  'Echo Details',
+  'Measurements',
+  'Doppler',
+  'Impression',
+  'Images',
+  'Disclaimer',
+  'Footer',
+]
+
+function ReportConfig({ data, setData }) {
+  const rows =
+    data.reportSections ||
+    reportSections.map((name) => ({
+      name,
+      text: '',
+      print: true,
+      font: 'Arial',
+      size: '10',
+      bold: false,
+      italic: false,
+      underline: false,
+      align: 'Left',
+      color: 'Black',
+    }))
+
+  const update = (index, key, value) =>
+    setData({
+      ...data,
+      reportSections: rows.map((row, i) => (i === index ? { ...row, [key]: value } : row)),
+    })
+
+  return (
+    <div className="space-y-4">
+      <Section title="Report configuration">
+        <FieldGrid
+          fields={[
+            f('hospitalAddress', 'Hospital address', 'textarea'),
+            f('font', 'Default font', 'select', ['Arial', 'Calibri', 'Times New Roman']),
+            f('fontSize', 'Default size', 'select', ['8', '9', '10', '11', '12', '14']),
+            f('titleSetting', 'Titles setting', 'select', ['Default', 'Detailed setting']),
+            f('commentsSetting', 'Comments setting', 'select', ['Always No', 'Always Yes', 'Custom']),
+            f('pndtFont', 'PNDT font', 'select', ['Arial', 'Calibri', 'Times New Roman']),
+          ]}
+          data={data}
+          setData={setData}
+        />
+      </Section>
+      <Section title="Per-section font styles">
+        <div className="overflow-auto">
+          <table className="data-table min-w-[1100px]">
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Text</th>
+                <th>Print</th>
+                <th>Font</th>
+                <th>Size</th>
+                <th>Bold</th>
+                <th>Italic</th>
+                <th>Underline</th>
+                <th>Align</th>
+                <th>Colour</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={row.name}>
+                  <td>{row.name}</td>
+                  <td>
+                    <input
+                      className="field-control"
+                      value={row.text}
+                      onChange={(e) => update(index, 'text', e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={row.print}
+                      onChange={(e) => update(index, 'print', e.target.checked)}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      className="field-control"
+                      value={row.font}
+                      onChange={(e) => update(index, 'font', e.target.value)}
+                    >
+                      {['Arial', 'Calibri', 'Times New Roman'].map((v) => (
+                        <option key={v}>{v}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      className="field-control w-20"
+                      value={row.size}
+                      onChange={(e) => update(index, 'size', e.target.value)}
+                    />
+                  </td>
+                  {['bold', 'italic', 'underline'].map((key) => (
+                    <td key={key}>
+                      <input
+                        type="checkbox"
+                        checked={row[key]}
+                        onChange={(e) => update(index, key, e.target.checked)}
+                      />
+                    </td>
+                  ))}
+                  <td>
+                    <select
+                      className="field-control"
+                      value={row.align}
+                      onChange={(e) => update(index, 'align', e.target.value)}
+                    >
+                      {['Left', 'Center', 'Right'].map((v) => (
+                        <option key={v}>{v}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      className="field-control"
+                      value={row.color}
+                      onChange={(e) => update(index, 'color', e.target.value)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </div>
+  )
+}
+
+function DeviceConnections({ data, setData }) {
+  const [status, setStatus] = useState('')
+  const [testing, setTesting] = useState(false)
+  const testConnection = async () => {
+    setTesting(true); setStatus('')
+    try {
+      const result = await workspaceService.testDeviceConnection(data)
+      setStatus(result.message || 'Connection successful.')
+    } catch (error) { setStatus(error.response?.data?.detail || 'Connection failed.') }
+    finally { setTesting(false) }
+  }
+  return (
+    <Section title="Device connections" description="Connection settings for echo machines, medical devices, and related integrations.">
+      <FieldGrid
+        fields={[
+          f('deviceEnabled', 'Enable device connection', 'checkbox'),
+          f('deviceVendor', 'Device vendor / model'),
+          f('deviceEndpoint', 'Connection endpoint / IP'),
+          f('devicePort', 'Port', 'number'),
+          f('deviceAETitle', 'AE title / device identifier'),
+        ]}
+        data={data}
+        setData={setData}
+      />
+      <div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={testConnection} disabled={!data.deviceEndpoint || !data.devicePort || testing} className="secondary-button disabled:opacity-40">{testing ? 'Testing…' : 'Test device connection'}</button>{status && <span className={`text-sm font-medium ${status.startsWith('Connected') ? 'text-emerald-700' : 'text-rose-700'}`}>{status}</span>}</div>
+    </Section>
+  )
+}
+
+function CustomFields({ data, setData }) {
+  const entries = data.customFields || []
+  const addField = () => {
+    const name = data.customFieldName?.trim()
+    if (!name) return
+    setData({
+      ...data,
+      customFields: [...entries, {
+        id: `${Date.now()}-${name}`,
+        name,
+        type: data.customFieldType,
+        module: data.customFieldModule,
+        required: Boolean(data.customFieldRequired),
+        options: data.customFieldOptions || '',
+      }],
+      customFieldName: '',
+      customFieldRequired: false,
+      customFieldOptions: '',
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      <Section title="Create custom field" description="Create a reusable field, choose its type, require it if needed, and assign it to a module.">
+        <FieldGrid
+          fields={[
+            f('customFieldName', 'Field name'),
+            f('customFieldType', 'Field type', 'select', ['Text', 'Number', 'Date', 'Dropdown', 'Checkbox', 'Textarea']),
+            f('customFieldOptions', 'Dropdown options (comma separated)'),
+            f('customFieldModule', 'Assign to module', 'select', ['Patients', 'Visits', 'Fetal Echo Report', 'Adult Echo Report', 'Pediatric Echo Report', 'Cardiology', 'Reports']),
+            f('customFieldRequired', 'Required field', 'checkbox'),
+          ]}
+          data={data}
+          setData={setData}
+        />
+        <button type="button" onClick={addField} className="primary-button mt-4"><Plus className="h-4 w-4" />Add custom field</button>
+      </Section>
+      <Section title="Configured fields" description="These fields are stored with your settings and remain assigned to their selected module.">
+        {entries.length ? <div className="overflow-x-auto"><table className="data-table"><thead><tr><th>Field</th><th>Type</th><th>Module</th><th>Options</th><th>Required</th><th /></tr></thead><tbody>{entries.map((field) => <tr key={field.id}><td>{field.name}</td><td>{field.type}</td><td>{field.module}</td><td>{field.options || '—'}</td><td>{field.required ? 'Yes' : 'No'}</td><td><button type="button" className="text-red-700 hover:underline" onClick={() => setData({ ...data, customFields: entries.filter((entry) => entry.id !== field.id) })}>Remove</button></td></tr>)}</tbody></table></div> : <p className="text-sm text-slate-500">No custom fields configured.</p>}
+      </Section>
+    </div>
+  )
+}
+
+function Signatures({ data, setData }) {
+  const [name, setName] = useState('')
+  const [role, setRole] = useState('Reporting doctor')
+  const [file, setFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const signatures = data.signatures || []
+  const saveSignature = async () => {
+    if (!name.trim()) return
+    setUploading(true)
+    try {
+      let path = ''
+      if (file) {
+        const body = new FormData()
+        body.append('file', file)
+        const result = await workspaceService.uploadMedia(body)
+        path = result.data?.url || result.data?.path || ''
+      }
+      const entry = { id: `${Date.now()}-${name.trim()}`, name: name.trim(), role, path }
+      setData({ ...data, signatures: [...signatures, entry], leftDoctorName: data.leftDoctorName || entry.name })
+      setName(''); setRole('Reporting doctor'); setFile(null)
+    } finally { setUploading(false) }
+  }
+  return (
+    <div className="space-y-4">
+    <Section title="Doctor signatures and report headers/footers" description="Configure doctor names, signature mode, and report header/footer text.">
+      <FieldGrid
+        fields={[
+          f('leftDoctorName', 'Doctor signature left'),
+          f('rightDoctorName', 'Doctor signature right'),
+          f('doctorSignatureMode', 'Signature display', 'select', ['Typed name', 'Uploaded image', 'Typed name and image']),
+          f('signatureUploadName', 'Signature image filename'),
+          f('reportHeaderText', 'Report header text', 'textarea'),
+          f('reportHeaderPlacement', 'Header placement', 'select', ['Left', 'Center', 'Right']),
+          f('reportFooterText', 'Report footer text', 'textarea'),
+          f('reportFooterPlacement', 'Footer placement', 'select', ['Left', 'Center', 'Right']),
+        ]}
+        data={data}
+        setData={setData}
+      />
+    </Section>
+    <Section title="Configured doctor signatures" description="Upload, update, assign, and display signature records in reports.">
+      <div className="grid gap-3 md:grid-cols-4">
+        <label className="field-label"><span>Doctor name</span><input className="field-control" value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label className="field-label"><span>Role</span><select className="field-control" value={role} onChange={(event) => setRole(event.target.value)}><option>Reporting doctor</option><option>Primary consultant</option><option>Second consultant</option></select></label>
+        <label className="field-label"><span>Signature image</span><input className="field-control" type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
+        <button type="button" disabled={!name.trim() || uploading} onClick={saveSignature} className="primary-button self-end justify-center disabled:opacity-40"><Upload className="h-4 w-4" />{uploading ? 'Uploading…' : 'Add signature'}</button>
+      </div>
+      {signatures.length ? <div className="mt-4 overflow-x-auto"><table className="data-table"><thead><tr><th>Doctor</th><th>Role</th><th>Signature</th><th /></tr></thead><tbody>{signatures.map((signature) => <tr key={signature.id}><td><input className="field-control" value={signature.name} onChange={(event) => setData({ ...data, signatures: signatures.map((entry) => entry.id === signature.id ? { ...entry, name: event.target.value } : entry) })} /></td><td><select className="field-control" value={signature.role || 'Reporting doctor'} onChange={(event) => setData({ ...data, signatures: signatures.map((entry) => entry.id === signature.id ? { ...entry, role: event.target.value } : entry) })}><option>Reporting doctor</option><option>Primary consultant</option><option>Second consultant</option></select></td><td>{signature.path ? <img src={signature.path} alt={`${signature.name} signature`} className="h-10 max-w-28 object-contain" /> : 'Typed name'}</td><td><button type="button" className="text-red-700 hover:underline" onClick={() => setData({ ...data, signatures: signatures.filter((entry) => entry.id !== signature.id) })}>Remove</button></td></tr>)}</tbody></table></div> : <p className="mt-3 text-sm text-slate-500">No signatures configured yet.</p>}
+    </Section>
+    </div>
+  )
+}
+
+function ImageConfiguration({ data, setData }) {
+  return (
+    <Section title="Image output configuration" description="Configure report image dimensions and grid layout.">
+      <FieldGrid
+        fields={[
+          f('outputImageWidth', 'Image width', 'number'),
+          f('outputImageHeight', 'Image height', 'number'),
+          f('outputImageColumns', 'Columns', 'number'),
+          f('outputImageRows', 'Rows', 'number'),
+        ]}
+        data={data}
+        setData={setData}
+      />
+    </Section>
+  )
+}
+
+function GeneralConfiguration({ data, setData }) {
+  return (
+    <Section title="General report/application configuration" description="Central settings for report delivery, disclaimers, ICD behavior, and module options.">
+      <FieldGrid
+        fields={[
+          f('defaultReportRecipient', 'Default report recipient email', 'email'),
+          f('autoEmailReports', 'Email reports automatically after saving', 'checkbox'),
+          f('disclaimerText', 'Limitation / disclaimer text', 'textarea'),
+          f('icdEnabledCardiologyOnly', 'Enable ICD codes only for cardiology', 'checkbox'),
+          f('defaultScanType', 'Default scan type', 'select', ['Adult Echo', 'Fetal Echo', 'Pediatric Echo']),
+          f('defaultReportType', 'Default report output', 'select', ['Report only', 'Report with images', 'With biometry graphs']),
+        ]}
+        data={data}
+        setData={setData}
+      />
+    </Section>
+  )
+}
+
+function RuleOfThree({ templates, setTemplates }) {
+  const blank = { title: '', title_type: 'Fetal Echo', layout: '3 × 3', views: [] }
+  const [form, setForm] = useState(blank)
+  const [selected, setSelected] = useState('')
+  const count = Number(form.layout[0]) ** 2
+
+  const save = async () => {
+    const payload = { ...form, scan_type: form.title_type }
+    const result = selected
+      ? await workspaceService.updateTemplate(selected, payload)
+      : await workspaceService.createTemplate(payload)
+    setTemplates(selected ? templates.map((t) => (t.id === selected ? result.data : t)) : [...templates, result.data])
+    setSelected(result.data.id)
+  }
+
+  const remove = async () => {
+    if (!selected) return
+    await workspaceService.deleteTemplate(selected)
+    setTemplates(templates.filter((t) => t.id !== selected))
+    setSelected('')
+    setForm(blank)
+  }
+
+  const assign = (index) => {
+    const name = prompt('Enter standard view name', form.views?.[index] || '')
+    if (name !== null) {
+      const views = [...(form.views || [])]
+      views[index] = name
+      setForm({ ...form, views })
+    }
+  }
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
+      <div className="space-y-4">
+        <Section title="Rule of Three master">
+          <Field label="Title" value={form.title} onChange={(value) => setForm({ ...form, title: value })} />
+          <div className="mt-3">
+            <Field
+              label="Title type"
+              type="select"
+              value={form.title_type}
+              onChange={(value) => setForm({ ...form, title_type: value })}
+              options={['Fetal Echo', 'Adult Echo', 'Pediatric Echo']}
+            />
+          </div>
+          <div className="mt-3">
+            <Field
+              label="Template"
+              type="select"
+              value={form.layout}
+              onChange={(value) => setForm({ ...form, layout: value, views: [] })}
+              options={['2 × 2', '3 × 3', '4 × 4']}
+            />
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button className="primary-button" onClick={save}>
+              <Save className="h-4 w-4" /> Save
+            </button>
+            <button className="secondary-button" onClick={() => { setForm(blank); setSelected('') }}>
+              <Plus className="h-4 w-4" /> New
+            </button>
+            <button className="secondary-button text-red-700" onClick={remove}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </Section>
+
+        <Section title="Saved templates">
+          <div className="space-y-2">
+            {templates.map((template) => (
+              <button
+                key={template.id}
+                onClick={() => { setSelected(template.id); setForm({ ...blank, ...template }) }}
+                className={`w-full rounded-lg border p-3 text-left ${selected === template.id ? 'border-primary-500 bg-primary-50' : 'border-slate-200'}`}
+              >
+                <strong>{template.title || template.name || 'Untitled'}</strong>
+                <div className="text-xs text-slate-500">{template.title_type || template.scan_type} · {template.layout}</div>
+              </button>
+            ))}
+          </div>
+        </Section>
+      </div>
+
+      <Section
+        title={form.title || 'Rule of Three'}
+        description="Click a frame to assign a standard view; images can later be placed into these positions from the report."
+      >
+        <div className={`grid gap-3 ${form.layout.startsWith('2') ? 'grid-cols-2' : form.layout.startsWith('4') ? 'grid-cols-4' : 'grid-cols-3'}`}>
+          {Array.from({ length: count }).map((_, index) => (
+            <button
+              onClick={() => assign(index)}
+              key={index}
+              className="flex aspect-video flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 text-xs text-slate-600 hover:border-primary-400 hover:bg-primary-50"
+            >
+              <Eye className="mb-1 h-5 w-5" />
+              {form.views?.[index] || `Unassigned ${index + 1}`}
+            </button>
+          ))}
+        </div>
+      </Section>
+    </div>
+  )
+}

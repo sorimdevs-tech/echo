@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Download, ImagePlus, Play, Redo2, RotateCcw, Save, Trash2, Undo2, Upload } from 'lucide-react'
 import { Field, FieldGrid, Section, Tabs, Workspace } from '../components/WorkspaceUI'
+import SearchableSelect from '../components/SearchableSelect'
 import { patientService } from '../api/patientService'
 import { workspaceService } from '../api/workspaceService'
 
@@ -16,6 +17,13 @@ export default function ImagesViewer() {
   const [visitId, setVisitId] = useState('')
   const [templates, setTemplates] = useState([])
   const [config, setConfig] = useState({ source: '', aeTitle: '', host: '', port: '', rows: '', columns: '', autoImport: false, aspectRatio:'', imageTitle:'', storageAeTitle:'', storageHost:'', storagePort:'', anonymous:false })
+
+  const patientOptions = useMemo(() => {
+    return patients.map((item) => ({
+      value: item.id,
+      label: `${item.patient_id || ''} — ${item.first_name || ''} ${item.last_name || ''}`.trim(),
+    }))
+  }, [patients])
 
   useEffect(() => {
     Promise.all([patientService.getPatients(), workspaceService.list('media-records'), workspaceService.getSettings(), workspaceService.getTemplates()]).then(([p,m,s,t]) => {
@@ -45,7 +53,27 @@ export default function ImagesViewer() {
 
   return (
     <Workspace title="Images & DICOM" description="Import, review, compare, annotate, archive and route patient-linked clinical media." actions={uploader}>
-      <Section title="Patient and visit" className="mb-4"><div className="grid gap-3 md:grid-cols-2"><label className="field-label"><span>Patient</span><select className="field-control" value={patientId} onChange={(e)=>{setPatientId(e.target.value);setVisitId('')}}><option value="">Select</option>{patients.map((patient)=><option key={patient.id} value={patient.id}>{patient.patient_id} — {patient.first_name} {patient.last_name}</option>)}</select></label><label className="field-label"><span>Visit</span><select className="field-control" value={visitId} onChange={(e)=>setVisitId(e.target.value)}><option value="">Select</option>{visits.map((visit)=><option key={visit.id} value={visit.id}>{visit.visit_date?new Date(visit.visit_date).toLocaleString():visit.id}</option>)}</select></label></div></Section>
+      <Section title="Patient and visit" className="mb-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="field-label">
+            <span>Patient</span>
+            <SearchableSelect
+              options={patientOptions}
+              value={patientId}
+              onChange={(val) => { setPatientId(val); setVisitId('') }}
+              placeholder="Select"
+              searchPlaceholder="Search patient ID or name..."
+            />
+          </div>
+          <label className="field-label">
+            <span>Visit</span>
+            <select className="field-control" value={visitId} onChange={(e)=>setVisitId(e.target.value)}>
+              <option value="">Select</option>
+              {visits.map((visit)=><option key={visit.id} value={visit.id}>{visit.visit_date?new Date(visit.visit_date).toLocaleString():visit.id}</option>)}
+            </select>
+          </label>
+        </div>
+      </Section>
       <Tabs items={tabs} value={activeTab} onChange={setActiveTab} />
       {activeTab === 'Images' && <MediaGrid assets={images} selected={selected} toggle={toggle} empty="Import an image or DICOM export to begin." />}
       {activeTab === 'Videos' && <VideoGrid assets={videos} />}

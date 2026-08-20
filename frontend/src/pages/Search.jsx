@@ -583,9 +583,9 @@ function SearchPage() {
             </div>
           </form>
 
-          <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="grid min-h-[540px] flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_220px]">
             <div className="flex min-h-0 min-w-0 flex-col gap-3">
-              <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white shadow-sm">
+              <section className="flex min-h-[280px] flex-1 flex-col rounded-lg border border-slate-200 bg-white shadow-sm">
                 <SectionHeader
                   title="Patient information"
                   detail={
@@ -600,7 +600,7 @@ function SearchPage() {
                   <table className="data-table min-w-[980px]">
                     <thead>
                       <tr>
-                        <th className="w-10" aria-label="Selected patient" />
+                        <th className="w-28" aria-label="Patient information" />
                         {patientColumns.map((column) => (
                           <th key={column.label}>{column.label}</th>
                         ))}
@@ -613,16 +613,21 @@ function SearchPage() {
                         return (
                           <tr
                             key={patient.id}
-                            onClick={() => selectPatient(patient)}
-                            onDoubleClick={() => openPatientWorkflow(patient)}
-                            title="Double-click to open the patient's fetal echo report"
-                            className={isSelected ? 'selected-row' : undefined}
+                            onClick={() => navigate(`/visits?patient=${patient.id}`)}
+                            title="Click to go to Visits page for this patient"
+                            className={`${isSelected ? 'selected-row ' : ''}cursor-pointer`}
                           >
                             <td>
-                              <span
-                                className={`mx-auto block h-2.5 w-2.5 rounded-full ${isSelected ? 'bg-teal-600' : 'bg-slate-300'
-                                  }`}
-                              />
+                              <form action="/visits" method="get">
+                                <input type="hidden" name="patient" value={patient.id} />
+                                <button
+                                  type="submit"
+                                  className="whitespace-nowrap rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700 transition hover:border-teal-300 hover:bg-teal-100"
+                                  aria-label={`Patient info for ${getValue(patient, ['first_name'], '')} ${getValue(patient, ['last_name'], '')}`.trim()}
+                                >
+                                  Patient Info
+                                </button>
+                              </form>
                             </td>
                             {patientColumns.map((column) => (
                               <td key={column.label}>{getValue(patient, column.keys, '-')}</td>
@@ -670,7 +675,12 @@ function SearchPage() {
                       </thead>
                       <tbody>
                         {visits.map((visit, index) => (
-                          <tr key={visit.id || index}>
+                          <tr
+                            key={visit.id || index}
+                            onClick={() => navigate(`/fetal-echo-report?patientId=${selectedPatient?.id || ''}&visitId=${visit.id || ''}&scatter=true`)}
+                            title="Click to open report with normal comments"
+                            className="cursor-pointer transition hover:bg-teal-50/60"
+                          >
                             <td>{index + 1}</td>
                             <td>{formatDateTime(visit.visit_date || visit.created_at)}</td>
                             <td>{getValue(visit, ['referral_doctor', 'ref_doctor'], 'Self')}</td>
@@ -698,7 +708,7 @@ function SearchPage() {
                     detail={
                       isDetailsLoading
                         ? 'Loading scans...'
-                        : `${scans.length} scan${scans.length === 1 ? '' : 's'} for patient · ${allScans.length} total in CRM`
+                        : `${scans.length} scan${scans.length === 1 ? '' : 's'} for patient · ${allScans.length} total records`
                     }
                   />
                   <div className="min-h-0 flex-1 overflow-auto">

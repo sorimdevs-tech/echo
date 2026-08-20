@@ -1,78 +1,95 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
+  UserPlus,
   Users,
-  Activity,
   ImageIcon,
   Ruler,
-  Brain,
   FileText,
-  Building2,
   BarChart3,
-  Settings,
   Cog,
-  Search
+  Power,
+  Crown,
 } from 'lucide-react'
+import EchoLogo from './EchoLogo'
 
 function Sidebar() {
   const navItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { path: '/patients/new', icon: UserPlus, label: 'New Patient' },
     { path: '/patients', icon: Users, label: 'Patients' },
-    { path: '/search', icon: Search, label: 'Search' },
-    { path: '/visits', icon: Activity, label: 'Visits' },
-    { path: '/echo-studies', icon: Activity, label: 'Echo Studies' },
     { path: '/images', icon: ImageIcon, label: 'Images' },
     { path: '/measurements', icon: Ruler, label: 'Measurements' },
-    { path: '/ai-assistant', icon: Brain, label: 'AI Assistant' },
     { path: '/reports', icon: FileText, label: 'Reports' },
-    { path: '/crm', icon: Building2, label: 'CRM' },
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
     { path: '/settings', icon: Cog, label: 'Settings' },
   ]
 
   return (
-    <div className="relative min-h-screen w-64 shrink-0 overflow-y-auto bg-gradient-to-b from-[#449087] to-[#32635e] pb-24 text-white">
-      <div className="border-b border-white/20 p-6">
-        <div className="flex items-center space-x-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/25">
-            <Activity className="h-6 w-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold">CardioEcho AI</h1>
-            <p className="text-xs text-slate-300">Reporting System</p>
-          </div>
+    <aside className="no-print flex h-screen w-64 shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white p-4 font-sans text-slate-700 select-none overflow-y-auto no-scrollbar">
+      <div className="space-y-6">
+        {/* Logo Section */}
+        <div className="px-2 py-2">
+          <EchoLogo compact />
         </div>
-      </div>
 
-      <nav className="p-4 space-y-2">
-        {navItems.map((item) => {
-          const Icon = item.icon
-          return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) =>
-                `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors duration-200 ${
-                  isActive
-                    ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/25'
-                    : 'text-white/90 hover:bg-white/10'
-                }`
-              }
+        {/* Navigation Items */}
+        <nav className="space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon
+
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.path === '/patients'}
+                className={({ isActive }) =>
+                  `flex items-center space-x-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-150 ${
+                    isActive
+                      ? 'bg-[#e6f4f1] text-[#0f5449] font-bold shadow-2xs'
+                      : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900'
+                  }`
+                }
+              >
+                <Icon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </NavLink>
+            )
+          })}
+
+          <form action="/" method="get" className="pt-1">
+            <input type="hidden" name="signout" value="1" />
+            <button
+              type="submit"
+              className="flex w-full items-center space-x-3 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium text-slate-600 transition-all hover:bg-red-50 hover:text-red-700"
             >
-              <Icon className="w-5 h-5" />
-              <span className="font-medium">{item.label}</span>
-            </NavLink>
-          )
-        })}
-      </nav>
+              <Power className="h-4 w-4" />
+              <span>Sign out</span>
+            </button>
+          </form>
+        </nav>
+      </div>
 
-      <div className="absolute bottom-0 left-0 right-0 border-t border-white/20 p-4">
-        <div className="text-xs text-slate-300">
+      {/* Upgrade Plan Card & Footer */}
+      <div className="space-y-4 pt-4 border-t border-slate-100">
+        <div className="rounded-xl border border-amber-200/60 bg-gradient-to-br from-amber-50/50 to-orange-50/30 p-3.5 shadow-2xs cursor-pointer hover:shadow-xs transition">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+              <Crown className="h-5 w-5 fill-amber-400" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-900">Upgrade Plan</p>
+              <p className="text-[11px] text-slate-500">Unlock advanced features</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-1 text-[11px] text-slate-400">
           <p>Version 1.0.0</p>
-          <p className="mt-1">© 2024 CardioEcho AI</p>
+          <p className="mt-0.5">© 2026 Echo AI</p>
         </div>
       </div>
-    </div>
+    </aside>
   )
 }
 

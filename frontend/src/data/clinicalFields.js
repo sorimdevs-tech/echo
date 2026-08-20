@@ -4,10 +4,12 @@ const s = (key, label, options = ['Normal', 'Abnormal', 'Not visualised', 'Not a
 
 export const echoSections = [
   { title: 'Position, situs and connections', fields: [s('cardiacPosition','Cardiac position'),s('situs','Situs'),s('systemicVenous','Systemic venous connection'),s('pulmonaryVenous','Pulmonary venous connection'),s('avConnection','Atrio-ventricular connection'),s('vaConnection','Ventriculo-arterial connection'),s('greatArteries','Great artery relationship')] },
-  { title: 'Atria and septa', fields: [s('atria','Atria'),s('interatrialSeptum','Interatrial septum'),s('foramenOvale','Foramen ovale'),s('avSeptum','Atrio-ventricular septum'),s('interventricularSeptum','Interventricular septum')] },
+  { title: 'Atria and septa', fields: [s('atria','Atria'),s('interatrialSeptum','Interatrial septum'),s('foramenOvale','Foramen ovale'),s('interventricularSeptum','Interventricular septum')] },
   { title: 'Valves', fields: [s('tricuspidValve','Tricuspid valve'),s('tricuspidRegurgitation','TR'),s('mitralValve','Mitral valve'),s('mitralRegurgitation','MR'),s('aorticValve','Aortic valve'),s('aorticRegurgitation','AR'),s('aorticStenosis','AS'),s('pulmonaryValve','Pulmonary valve'),s('pulmonaryRegurgitation','PR'),s('pulmonaryStenosis','PS')] },
   { title: 'Ventricles and function', fields: [s('rightVentricle','Right ventricle'),s('rvContractility','RV contractility'),s('leftVentricle','Left ventricle'),s('lvContractility','LV contractility'),s('wallMotion','Regional wall motion'),s('diastolicFunction','Diastolic function')] },
-  { title: 'Arteries and other findings', fields: [s('ascendingAorta','Ascending aorta'),s('aorticArch','Aortic arch'),s('descendingAorta','Descending aorta'),s('coronaries','Coronaries'),s('mainPulmonaryArtery','Main pulmonary artery'),s('branchPulmonaryArteries','Branch pulmonary arteries'),s('ductusArteriosus','Ductus arteriosus'),s('pericardium','Pericardium'),s('pleuralEffusion','Pleural effusion')] },
+  { title: 'Great Arteries & Outflow Tracts', fields: [s('greatArteryRelationship','Great artery relationship'),s('ascendingAorta','Ascending aorta'),s('mainPulmonaryArtery','Main pulmonary artery'),s('branchPulmonaryArteries','Branch pulmonary arteries'),s('coronaries','Coronaries')] },
+  { title: 'Aortic & Ductal Arches', fields: [s('aorticArch','Aortic arch'),s('descendingAorta','Descending aorta'),s('ductusArteriosus','Ductus arteriosus')] },
+  { title: 'Pericardium & Effusions', fields: [s('pericardium','Pericardium / Effusion'),s('pleuralEffusion','Pleural effusion')] },
 ]
 
 export const adult2D = [

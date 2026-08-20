@@ -12,6 +12,14 @@ import {
 } from 'lucide-react'
 import { patientService } from '../api/patientService'
 import { scanService } from '../api/scanService'
+import { deliverReportIfEnabled } from '../api/reportDelivery'
+import { workspaceService } from '../api/workspaceService'
+
+import ImagesModal from '../components/ImagesModal'
+import ReportConfigModal from '../components/ReportConfigModal'
+import SearchableSelect from '../components/SearchableSelect'
+import ConfiguredFields from '../components/ConfiguredFields'
+import { ConfiguredSignatureMark, ConfiguredSignatureSelect } from '../components/ConfiguredSignature'
 
 const mainTabs = [
   { id: 'scan', label: 'Scan' },
@@ -31,13 +39,14 @@ const imageTabs = [
 
 const initialReport = {
   indication: '',
+  custom_fields: {},
   tag: '',
   add_new_tag: false,
   patient_tags: [],
   print_options: {
-    biometry: true,
+    biometry: false,
     doppler: false,
-    echo_details_custom_report: true,
+    echo_details_custom_report: false,
   },
   echo_details: {
     heart_rate: '',
@@ -172,7 +181,6 @@ const initialReport = {
     investigation_status: {
       abnormal: false,
       ambiguity: false,
-      growth_abnormality: false,
     },
     primary_consultant: '',
     second_consultant: '',
@@ -228,6 +236,29 @@ function formatDate(value) {
   return date.toLocaleDateString('en-GB')
 }
 
+const pediatricNormalComments = {
+  situs: 'Normal',
+  venous_connection: 'Normal',
+  interatrial_septum: 'Intact',
+  tricuspid_valve: 'Normal',
+  tr: 'None',
+  mitral_valve: 'Normal',
+  mr: 'None',
+  right_ventricle: 'Normal',
+  right_ventricle_contractility: 'Good',
+  left_ventricle: 'Normal',
+  left_ventricle_contractility: 'Good',
+  great_artery_relationship: 'Normal',
+  aortic_valve: 'Normal',
+  ar: 'None',
+  as: 'None',
+  aorta: 'Normal',
+  coronaries: 'Normal',
+  aortic_arch: 'normal',
+  pulmonary_valve: 'Normal',
+  main_pulmonary_artery: 'Normal',
+}
+
 function PediatricEchoReport() {
   const navigate = useNavigate()
   const { scanId } = useParams()
@@ -244,11 +275,67 @@ function PediatricEchoReport() {
   const [statusMessage, setStatusMessage] = useState('')
   const [isTagModalOpen, setIsTagModalOpen] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [isImagesModalOpen, setIsImagesModalOpen] = useState(false)
+  const [reportSettings, setReportSettings] = useState({})
 
   const selectedPatient = useMemo(
     () => patients.find((patient) => patient.id === selectedPatientId),
     [patients, selectedPatientId],
   )
+
+  const isNormalCommentsPopulated = useMemo(() => {
+    const echo = report.echo_details
+    return Boolean(echo?.situs || echo?.mitral_valve || echo?.aortic_valve || echo?.right_ventricle)
+  }, [report.echo_details])
+
+  const scatterNormalComments = () => {
+    setReport((current) => ({
+      ...current,
+      echo_details: {
+        ...current.echo_details,
+        ...pediatricNormalComments,
+      },
+    }))
+  }
+
+  const toggleNormalComments = () => {
+    if (isNormalCommentsPopulated) {
+      setReport((current) => ({
+        ...current,
+        echo_details: {
+          ...current.echo_details,
+          situs: '',
+          venous_connection: '',
+          interatrial_septum: '',
+          tricuspid_valve: '',
+          tr: '',
+          mitral_valve: '',
+          mr: '',
+          right_ventricle: '',
+          right_ventricle_contractility: '',
+          left_ventricle: '',
+          left_ventricle_contractility: '',
+          great_artery_relationship: '',
+          aortic_valve: '',
+          ar: '',
+          as: '',
+          aorta: '',
+          coronaries: '',
+          aortic_arch: '',
+          pulmonary_valve: '',
+          main_pulmonary_artery: '',
+        },
+      }))
+    } else {
+      scatterNormalComments()
+    }
+  }
+
+  useEffect(() => {
+    if (searchParams.get('scatter') === 'true' || searchParams.get('autoScatter') === 'true') {
+      scatterNormalComments()
+    }
+  }, [searchParams])
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -264,6 +351,8 @@ function PediatricEchoReport() {
 
     fetchPatients()
   }, [])
+
+  useEffect(() => { workspaceService.getSettings().then((result) => setReportSettings(result.data || {})).catch(() => {}) }, [])
 
   useEffect(() => {
     if (!scanId) return
@@ -325,6 +414,9 @@ function PediatricEchoReport() {
         const nextScanId = result.data.id
         setSavedScanId(nextScanId)
         setStatusMessage('Pediatric echo report saved.')
+        deliverReportIfEnabled({ title: report.impression.report_title || 'Pediatric Echo Report', patient: selectedPatient, visitId: selectedVisitId, report })
+          .then((delivery) => delivery.sent && setStatusMessage(`Pediatric echo report saved and emailed to ${delivery.recipient}.`))
+          .catch((error) => setStatusMessage(`Pediatric echo report saved, but email delivery failed: ${error.response?.data?.detail || 'check SMTP settings'}.`))
 
         if (!savedScanId) {
           const query = new URLSearchParams()
@@ -365,31 +457,36 @@ function PediatricEchoReport() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={scatterNormalComments}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700"
+              >
+                ✓ Fill Normal Scan
+              </button>
               <ToolbarButton icon={Save} label={isSaving ? 'Saving' : 'Save'} onClick={handleSave} />
               <ToolbarButton icon={Trash2} label="Delete" />
               <ToolbarButton icon={RotateCcw} label="Clear" onClick={handleClear} />
               <ToolbarButton icon={Printer} label="Preview" onClick={() => setIsPreviewOpen(true)} />
-              <ToolbarButton icon={FileImage} label="Images" onClick={() => setActiveImageTab('images')} />
+              <ToolbarButton icon={FileImage} label="Images" onClick={() => setIsImagesModalOpen(true)} />
               <ToolbarButton icon={X} label="Close" onClick={() => navigate('/search')} />
             </div>
           </div>
 
           <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_minmax(240px,1fr)_minmax(180px,0.55fr)_auto]">
-            <label className="field-label">
-              Patient
-              <select
+            <div className="field-label">
+              <span>Patient</span>
+              <SearchableSelect
+                options={patients.map((p) => ({
+                  value: p.id,
+                  label: `${p.patient_id || ''} — ${getPatientName(p)}`.trim(),
+                }))}
                 value={selectedPatientId}
-                onChange={(event) => setSelectedPatientId(event.target.value)}
-                className="field-control"
-              >
-                <option value="">Select patient</option>
-                {patients.map((patient) => (
-                  <option key={patient.id} value={patient.id}>
-                    {patient.patient_id} - {getPatientName(patient)}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={(val) => setSelectedPatientId(val)}
+                placeholder="Select patient"
+                searchPlaceholder="Search patient ID or name..."
+              />
+            </div>
 
             <HeaderField
               label="Indication(s)"
@@ -426,27 +523,6 @@ function PediatricEchoReport() {
 
             {statusMessage && <span className="font-semibold text-blue-800">{statusMessage}</span>}
           </div>
-
-          <div className="mt-4 rounded-xl border border-teal-100 bg-teal-50/50 p-3">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-teal-700">Options to print</div>
-            <div className="flex flex-wrap gap-3">
-              {Object.entries({
-                biometry: 'Biometry',
-                doppler: 'Doppler',
-                echo_details_custom_report: 'Echo details custom report',
-              }).map(([key, label]) => (
-                <label key={key} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm">
-                  <input
-                    type="checkbox"
-                    checked={report.print_options[key]}
-                    onChange={(event) => updateReport(['print_options', key], event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </div>
         </section>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -461,7 +537,14 @@ function PediatricEchoReport() {
 
             <div className="min-h-0 overflow-auto p-4">
               {activeMainTab === 'scan' ? (
-                <ScanPanel activeScanTab={activeScanTab} setActiveScanTab={setActiveScanTab} report={report} updateReport={updateReport} />
+                <ScanPanel
+                  activeScanTab={activeScanTab}
+                  setActiveScanTab={setActiveScanTab}
+                  report={report}
+                  updateReport={updateReport}
+                  onToggleNormalComments={toggleNormalComments}
+                  isNormalCommentsPopulated={isNormalCommentsPopulated}
+                />
               ) : (
                 <ImpressionPanel report={report} updateReport={updateReport} />
               )}
@@ -485,14 +568,21 @@ function PediatricEchoReport() {
           report={report}
           updateReport={updateReport}
           patient={selectedPatient}
+          settings={reportSettings}
           onClose={() => setIsPreviewOpen(false)}
         />
       )}
+      <ImagesModal
+        open={isImagesModalOpen}
+        onClose={() => setIsImagesModalOpen(false)}
+        patient={selectedPatient}
+        imageConfig={reportSettings}
+      />
     </div>
   )
 }
 
-function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
+function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport, onToggleNormalComments, isNormalCommentsPopulated }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1 border-b border-slate-200">
@@ -502,14 +592,21 @@ function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
           </TabButton>
         ))}
       </div>
-      {activeScanTab === 'echo-details' && <EchoDetailsTab report={report} updateReport={updateReport} />}
+      {activeScanTab === 'echo-details' && (
+        <EchoDetailsTab
+          report={report}
+          updateReport={updateReport}
+          onToggleNormalComments={onToggleNormalComments}
+          isNormalCommentsPopulated={isNormalCommentsPopulated}
+        />
+      )}
       {activeScanTab === 'biometry' && <BiometryTab report={report} updateReport={updateReport} />}
       {activeScanTab === 'doppler' && <DopplerTab report={report} updateReport={updateReport} />}
     </div>
   )
 }
 
-function EchoDetailsTab({ report, updateReport }) {
+function EchoDetailsTab({ report, updateReport, onToggleNormalComments, isNormalCommentsPopulated }) {
   const echo = report.echo_details
 
   return (
@@ -603,7 +700,13 @@ function EchoDetailsTab({ report, updateReport }) {
       </div>
 
       <aside className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <button type="button" className="legacy-small-button mb-4">Clear all comments</button>
+        <button
+          type="button"
+          onClick={onToggleNormalComments}
+          className="legacy-small-button mb-4"
+        >
+          {isNormalCommentsPopulated ? 'Clear all comments' : 'Scatter normal comments'}
+        </button>
         <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
           <input
             type="checkbox"
@@ -727,6 +830,7 @@ function ImpressionPanel({ report, updateReport }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-3">
+        <ConfiguredFields module="Pediatric Echo Report" values={report.custom_fields} onChange={(custom_fields) => updateReport(['custom_fields'], custom_fields)} />
         <TextInput label="Report title" value={impression.report_title} onChange={(value) => updateReport(['impression', 'report_title'], value)} />
         <TextInput label="First line of report" value={impression.first_line} onChange={(value) => updateReport(['impression', 'first_line'], value)} />
         <TextArea label="Header comments - (F11 - Show previous header comments)" value={impression.header_comments} onChange={(value) => updateReport(['impression', 'header_comments'], value)} rows={3} />
@@ -759,13 +863,12 @@ function ImpressionPanel({ report, updateReport }) {
       </div>
 
       <aside className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <ComboWithNew label="Report signed by (L)" value={impression.report_signed_by_l} onChange={(value) => updateReport(['impression', 'report_signed_by_l'], value)} />
-        <ComboWithNew label="Report signed by (R)" value={impression.report_signed_by_r} onChange={(value) => updateReport(['impression', 'report_signed_by_r'], value)} />
+        <ConfiguredSignatureSelect label="Report signed by (L)" value={impression.report_signed_by_l} onChange={(value) => updateReport(['impression', 'report_signed_by_l'], value)} />
+        <ConfiguredSignatureSelect label="Report signed by (R)" value={impression.report_signed_by_r} onChange={(value) => updateReport(['impression', 'report_signed_by_r'], value)} />
         <Fieldset title="Investigation status">
           {[
             ['Abnormal', 'abnormal'],
             ['Ambiguity', 'ambiguity'],
-            ['Growth Abnormality', 'growth_abnormality'],
           ].map(([label, key]) => (
             <label key={key} className="block">
               <input type="checkbox" checked={impression.investigation_status[key]} onChange={(event) => updateReport(['impression', 'investigation_status', key], event.target.checked)} /> {label}
@@ -935,7 +1038,8 @@ function PatientTagModal({ report, updateReport, onClose, onStatus }) {
   )
 }
 
-function ReportPreviewModal({ report, updateReport, patient, onClose }) {
+function ReportPreviewModal({ report, updateReport, patient, settings = {}, onClose }) {
+  const [isConfigOpen, setIsConfigOpen] = useState(false)
   const detailRows = [
     ['Atrial situs', report.echo_details.atrial_situs || 'Normal'],
     ['Systemic venous connection', report.echo_details.systemic_venous_connection || 'Normal'],
@@ -961,12 +1065,27 @@ function ReportPreviewModal({ report, updateReport, patient, onClose }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex flex-wrap gap-2 border-b border-slate-200 bg-slate-50 p-3">
             {['Print', 'Zoom+', 'Zoom-', 'Actual size', 'Fit width', 'Two pages', 'Config', 'PDF', 'Mail'].map((label) => (
-              <button key={label} type="button" onClick={label === 'Print' ? () => window.print() : undefined} className="legacy-small-button">{label}</button>
+              <button
+                key={label}
+                type="button"
+                onClick={
+                  label === 'Print'
+                    ? () => window.print()
+                    : label === 'Config'
+                    ? () => setIsConfigOpen(true)
+                    : undefined
+                }
+                className="legacy-small-button"
+              >
+                {label}
+              </button>
             ))}
             <button type="button" onClick={onClose} className="legacy-small-button">Close</button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-6">
             <div className="mx-auto min-h-[980px] max-w-3xl bg-white p-10 shadow-sm">
+              {settings.reportHeaderText && <p className="mb-1 text-sm text-slate-600" style={{ textAlign: String(settings.reportHeaderPlacement || 'Center').toLowerCase() }}>{settings.reportHeaderText}</p>}
+              <h2 className="mb-5 text-center text-xl font-bold">{report.impression.report_title || 'Pediatric Echo Report'}</h2>
               <table className="mb-4 w-full border border-slate-400 text-sm">
                 <tbody>
                   <tr>
@@ -989,7 +1108,6 @@ function ReportPreviewModal({ report, updateReport, patient, onClose }) {
                   </tr>
                 </tbody>
               </table>
-              <h2 className="mb-6 text-center text-xl font-bold">{report.impression.report_title}</h2>
               <h3 className="mb-3 font-bold">Pediatric Echo details</h3>
               <div className="space-y-3">
                 {detailRows.map(([label, value]) => (
@@ -999,40 +1117,118 @@ function ReportPreviewModal({ report, updateReport, patient, onClose }) {
                   </div>
                 ))}
               </div>
+              {(report.impression.report_signed_by_l || report.impression.report_signed_by_r || settings.leftDoctorName || settings.rightDoctorName) && <div className="mt-10 flex justify-between border-t pt-5 text-sm"><ConfiguredSignatureMark name={report.impression.report_signed_by_l || settings.leftDoctorName} settings={settings} /><ConfiguredSignatureMark name={report.impression.report_signed_by_r || settings.rightDoctorName} settings={settings} align="right" /></div>}
+              {settings.reportFooterText && <p className="mt-8 border-t pt-3 text-xs text-slate-500" style={{ textAlign: String(settings.reportFooterPlacement || 'Center').toLowerCase() }}>{settings.reportFooterText}</p>}
             </div>
           </div>
         </div>
 
-        <aside className="hidden w-[420px] overflow-auto border-l border-slate-200 bg-slate-50 p-4 xl:block">
-          <h3 className="mb-4 text-lg font-semibold text-slate-950">Setting</h3>
+        <aside className="hidden w-[420px] overflow-auto border-l border-slate-200 bg-slate-50 p-4 xl:block text-xs">
+          <h3 className="mb-4 text-base font-bold text-slate-950">Setting</h3>
           <div className="space-y-4">
             <Fieldset title="Report layout">
-              <SelectInput label="Report type" value={report.preview_settings.report_type} onChange={(value) => updateReport(['preview_settings', 'report_type'], value)} options={['Report only', 'Report with images']} />
-              <label className="mt-3 flex items-center gap-2"><input type="checkbox" checked={report.preview_settings.with_biometry_graphs} onChange={(event) => updateReport(['preview_settings', 'with_biometry_graphs'], event.target.checked)} /> With biometry graphs</label>
-              <SelectInput label="Save as" value={report.preview_settings.save_as} onChange={(value) => updateReport(['preview_settings', 'save_as'], value)} options={['Pdf', 'Docx']} />
+              <SelectInput label="Report type" value={report.preview_settings.report_type || 'Report only'} onChange={(value) => updateReport(['preview_settings', 'report_type'], value)} options={['Report only', 'Report with images']} />
+              <label className="mt-2 flex items-center gap-2 font-medium"><input type="checkbox" checked={report.preview_settings.with_biometry_graphs} onChange={(event) => updateReport(['preview_settings', 'with_biometry_graphs'], event.target.checked)} /> With biometry graphs</label>
+              <SelectInput label="Save as" value={report.preview_settings.save_as || 'Pdf'} onChange={(value) => updateReport(['preview_settings', 'save_as'], value)} options={['Pdf', 'Docx']} />
             </Fieldset>
+
             <Fieldset title="Print options">
-              {[
-                ['Alias ID', 'alias_id'],
-                ['Designation', 'designation'],
-                ['Print footer text', 'print_footer_text'],
-              ].map(([label, key]) => (
-                <label key={key} className="mr-3 inline-flex items-center gap-2">
-                  <input type="checkbox" checked={report.preview_settings[key]} onChange={(event) => updateReport(['preview_settings', key], event.target.checked)} />
-                  {label}
-                </label>
-              ))}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> Preprinted stationery</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> Logo</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" defaultChecked /> Alias ID</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" defaultChecked /> Designation</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> Hide Section title</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> Organ title top</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> Image title</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> All EDDs in patient demography</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> All GA</label>
+              </div>
             </Fieldset>
+
+            <Fieldset title="Report and image border">
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2"><input type="checkbox" /> Inner border for report</label>
+                <label className="flex items-center gap-2"><input type="checkbox" /> Inner border for image</label>
+              </div>
+            </Fieldset>
+
+            <Fieldset title="Margin for logo">
+              <div className="grid grid-cols-2 gap-2">
+                <TextInput label="Left margin" value="10" onChange={() => {}} />
+                <TextInput label="Top margin" value="10" onChange={() => {}} />
+                <TextInput label="Height" value="90" onChange={() => {}} />
+                <TextInput label="Width" value="90" onChange={() => {}} />
+              </div>
+            </Fieldset>
+
+            <Fieldset title="Patient demography">
+              <div className="space-y-2">
+                <SelectInput label="In report page" value="Full details - all pages" onChange={() => {}} options={['Full details - all pages', 'Header only']} />
+                <label className="flex items-center gap-2"><input type="checkbox" /> Without border</label>
+                <SelectInput label="In image page" value="Full details - all pages" onChange={() => {}} options={['Full details - all pages', 'Header only']} />
+                <label className="flex items-center gap-2"><input type="checkbox" /> Without border</label>
+              </div>
+            </Fieldset>
+
             <Fieldset title="Margin for report">
-              <div className="grid grid-cols-2 gap-3">
-                {['Left margin', 'Top margin', 'Height', 'Width', 'Line spacing', 'Section spacing'].map((label) => (
-                  <TextInput key={label} label={label} value="" onChange={() => {}} />
-                ))}
+              <div className="grid grid-cols-2 gap-2">
+                <TextInput label="Left margin" value="85" onChange={() => {}} />
+                <TextInput label="Top margin" value="100" onChange={() => {}} />
+                <TextInput label="Height" value="1000" onChange={() => {}} />
+                <TextInput label="Width" value="710" onChange={() => {}} />
+                <TextInput label="Report line spacing" value="0.11" onChange={() => {}} />
+                <TextInput label="Section spacing" value="0.2" onChange={() => {}} />
+              </div>
+            </Fieldset>
+
+            <Fieldset title="Margin for images">
+              <div className="grid grid-cols-2 gap-2">
+                <TextInput label="Left margin" value="50" onChange={() => {}} />
+                <TextInput label="Top margin" value="50" onChange={() => {}} />
+                <TextInput label="Height" value="1000" onChange={() => {}} />
+                <TextInput label="Width" value="750" onChange={() => {}} />
+              </div>
+            </Fieldset>
+
+            <Fieldset title="Images size with report">
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <TextInput label="Height" value="180" onChange={() => {}} />
+                  <TextInput label="Width" value="240" onChange={() => {}} />
+                </div>
+                <TextInput label="No of images/graphs on left/right/top/bottom side" value="0" onChange={() => {}} />
+                <div className="flex flex-wrap gap-3">
+                  <label className="flex items-center gap-1.5"><input type="checkbox" /> Align images to page</label>
+                  <label className="flex items-center gap-1.5"><input type="checkbox" /> Landscape</label>
+                  <label className="flex items-center gap-1.5"><input type="checkbox" /> Black Background</label>
+                </div>
+              </div>
+            </Fieldset>
+
+            <Fieldset title="Table for Doppler/Vascular/Follicular study">
+              <div className="grid grid-cols-3 gap-2">
+                <SelectInput label="Border style" value="Solid" onChange={() => {}} options={['Solid', 'Dashed', 'None']} />
+                <TextInput label="Width" value="1" onChange={() => {}} />
+                <SelectInput label="Color" value="LightGray" onChange={() => {}} options={['LightGray', 'Black', 'Blue']} />
+              </div>
+            </Fieldset>
+
+            <Fieldset title="Report footer">
+              <div className="flex flex-wrap gap-3">
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> Footer line</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" /> Page no. and date</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" defaultChecked /> Print footer text</label>
               </div>
             </Fieldset>
           </div>
         </aside>
       </div>
+
+      <ReportConfigModal
+        open={isConfigOpen}
+        onClose={() => setIsConfigOpen(false)}
+      />
     </div>
   )
 }
@@ -1164,12 +1360,38 @@ function Fieldset({ title = '', className = '', children }) {
 }
 
 function ComboField({ label, value, onChange, withPlus = false }) {
+  const listId = `dl-ped-${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+  const defaultOptions = ['Normal', 'Abnormal', 'Intact', 'None', 'Good', 'Not visualised']
+
   return (
     <label className="grid min-w-0 gap-1 sm:grid-cols-[minmax(150px,0.8fr)_minmax(0,1fr)] sm:items-center">
       <span className="text-sm font-medium text-slate-700">{label}</span>
-      <span className="flex min-w-0 gap-2">
-        <input className="legacy-input w-full" value={value || ''} onChange={(event) => onChange(event.target.value)} />
-        {withPlus && <button type="button" className="legacy-plus-button">+</button>}
+      <span className="flex min-w-0 items-center gap-1.5">
+        <input
+          list={listId}
+          className="legacy-input w-full"
+          value={value || ''}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Select or type..."
+        />
+        <datalist id={listId}>
+          {defaultOptions.map((opt) => (
+            <option key={opt} value={opt} />
+          ))}
+        </datalist>
+        {withPlus && (
+          <button
+            type="button"
+            className="legacy-plus-button"
+            title={`Add custom value for ${label}`}
+            onClick={() => {
+              const newVal = prompt(`Enter custom value for ${label}:`, value || '')
+              if (newVal !== null) onChange(newVal)
+            }}
+          >
+            +
+          </button>
+        )}
       </span>
     </label>
   )

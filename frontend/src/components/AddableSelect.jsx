@@ -52,7 +52,7 @@ export default function AddableSelect({ field, value, onChange, options = [], cl
           type="button"
           title={`Add ${field.replaceAll('_', ' ')}`}
           onClick={() => { setIsAdding(!isAdding); setError('') }}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-100 text-teal-700 transition hover:bg-teal-200"
+          className="legacy-plus-button"
         >
           {isAdding ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
         </button>
