@@ -1,99 +1,110 @@
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
-import {
-  Activity,
-  CalendarDays,
-  Pencil,
-  Power,
-  RefreshCw,
-  RotateCcw,
-  Search as SearchIcon,
-  UserPlus,
-} from 'lucide-react'
+import GlobalSearch from './GlobalSearch'
+import NotificationDropdown from './NotificationDropdown'
 
 function Layout({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const pageTitles = {
-    '/': 'Dashboard', '/dashboard': 'Dashboard', '/search': 'Patient Search', '/patients': 'Patients',
-    '/patients/new': 'New Patient', '/visits': 'Visits', '/referral-doctors': 'Referral Doctors',
-    '/echo-studies': 'Echo Studies', '/images': 'Images & DICOM', '/measurements': 'Measurements',
-    '/reports': 'Clinical Reports', '/analytics': 'Queries & Analytics', '/settings': 'Settings',
-    '/administration': 'Administration', '/crm': 'CRM', '/ai-assistant': 'AI Assistant',
-  }
-  const pageTitle = Object.entries(pageTitles).find(([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`))?.[1] || 'CardioEcho AI'
+  const isDashboard = location.pathname === '/' || location.pathname === '/dashboard'
 
-  const handleSearch = (e) => {
-    e?.preventDefault()
-    navigate('/search')
-  }
+  // Dynamic doctor profile info (synced with localStorage and update events)
+  const [doctorInfo, setDoctorInfo] = useState(() => {
+    try {
+      const saved = localStorage.getItem('echoai_doctor_profile')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return {
+          name: parsed.name || 'Dr. Sarah',
+          initials: parsed.initials || 'DS',
+        }
+      }
+      const user = localStorage.getItem('echoai_user') || sessionStorage.getItem('echoai_user')
+      if (user) {
+        const parsed = JSON.parse(user)
+        return {
+          name: parsed.name || 'Dr. Sarah',
+          initials: parsed.initials || 'DS',
+        }
+      }
+    } catch (e) {
+      console.error('Error loading doctor info in Layout', e)
+    }
+    return { name: 'Dr. Sarah', initials: 'DS' }
+  })
 
-  const handleRefresh = () => {
-    navigate('/search')
-    setTimeout(() => window.location.reload(), 100)
-  }
+  useEffect(() => {
+    const handleProfileUpdate = () => {
+      try {
+        const saved = localStorage.getItem('echoai_doctor_profile')
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          setDoctorInfo({
+            name: parsed.name || 'Dr. Sarah',
+            initials: parsed.initials || 'DS',
+          })
+        }
+      } catch (e) {
+        console.error('Error handling profile update in Layout', e)
+      }
+    }
+
+    window.addEventListener('doctor_profile_updated', handleProfileUpdate)
+    return () => window.removeEventListener('doctor_profile_updated', handleProfileUpdate)
+  }, [])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
+    <div className="flex h-screen overflow-hidden bg-[#f4f6f8] text-slate-900 font-sans">
       <Sidebar />
-      <div className="flex h-full min-w-0 flex-1 flex-col px-1 py-1 sm:px-2 lg:px-3">
-        <header className="mb-3 flex shrink-0 flex-col gap-3 border-b border-slate-200 pb-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-white shadow-sm">
-              <Activity className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">EchoScan</p>
-              <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
-            </div>
+      <div className="flex h-full min-w-0 flex-1 flex-col px-4 py-4 lg:px-6">
+        {/* Modern Header Navigation Bar */}
+        <header className="no-print mb-4 flex shrink-0 items-center justify-between gap-4">
+          {/* Welcome Title */}
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+              Welcome back, {doctorInfo.name} 👋
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Here's what's happening with your echoAI system today.
+            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Right Area: Global Search + Notifications + User Avatar */}
+          <div className="flex items-center gap-3">
+            {/* Global Search Component */}
+            <div className="w-72 sm:w-80 md:w-96">
+              <GlobalSearch />
+            </div>
+
+            {/* Interactive Notification Bell Dropdown */}
+            <NotificationDropdown />
+
+            {/* User Avatar Circle - clickable to navigate to Doctor Profile page */}
             <button
               type="button"
-              onClick={handleSearch}
-              className={`toolbar-button ${
-                location.pathname === '/search'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'hover:border-teal-300 hover:bg-teal-50'
-              }`}
+              id="header-user-avatar-button"
+              onClick={() => navigate('/profile')}
+              className="group relative flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white shadow-2xs hover:bg-emerald-800 hover:ring-2 hover:ring-emerald-500/50 transition cursor-pointer"
+              title={`Doctor Profile (${doctorInfo.name}) - Click to view user profile`}
+              aria-label="Doctor Profile"
             >
-              <SearchIcon className="h-4 w-4" />
-              <span className={location.pathname === '/search' ? 'font-semibold' : ''}>Search</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/patients/new')}
-              className={`toolbar-button ${
-                location.pathname === '/patients/new'
-                  ? 'bg-teal-600 text-white shadow-sm'
-                  : 'hover:border-teal-300 hover:bg-teal-50'
-              }`}
-            >
-              <UserPlus className="h-4 w-4" />
-              <span className={location.pathname === '/patients/new' ? 'font-semibold' : ''}>New patient</span>
-            </button>
-            <button type="button" className="toolbar-button" onClick={() => navigate('/patients')}>
-              <Pencil className="h-4 w-4" />
-              <span>Edit patient</span>
-            </button>
-            <button type="button" className="toolbar-button" onClick={() => navigate('/visits')}>
-              <CalendarDays className="h-4 w-4" />
-              <span>Visits</span>
-            </button>
-            <button type="button" onClick={handleRefresh} className="toolbar-button">
-              <RefreshCw className="h-4 w-4" />
-              <span>Refresh</span>
+              <span>{doctorInfo.initials}</span>
+              <span
+                className="absolute -bottom-0.5 -right-0.5 flex h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-white"
+                title="Online"
+              />
             </button>
           </div>
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto pb-3">
+        <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto no-scrollbar pb-4">
           {children}
         </main>
       </div>
     </div>
   )
 }
+
 
 export default Layout

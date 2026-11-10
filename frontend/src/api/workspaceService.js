@@ -1,6 +1,8 @@
 import api from './axios'
 
 export const workspaceService = {
+  getMediaLayout: async (patientId, visitId, kind) => (await api.get(`/media-layouts/${patientId}/${visitId}/${kind}`)).data,
+  saveMediaLayout: async (patientId, visitId, kind, data) => (await api.put(`/media-layouts/${patientId}/${visitId}/${kind}`, data)).data,
   getSettings: async () => (await api.get('/settings')).data,
   getNextPatientId: async () => (await api.get('/settings/next-patient-id')).data,
   saveSettings: async (data) => (await api.put('/settings', data)).data,

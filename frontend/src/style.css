@@ -12,6 +12,48 @@
     font-family: 'Inter', sans-serif;
     background: #f5f7fb;
   }
+
+  /* Prevent mouse wheel scroll from accidentally incrementing/decrementing numeric inputs */
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Custom sleek scrollbar for webkit */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.7);
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
 }
 
 @layer components {
@@ -30,9 +72,34 @@
   .field-label {
     @apply flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-600;
   }
+  .field-label.required::after {
+    content: ' *';
+    color: #dc2626;
+  }
+  .field-required-indicator {
+    color: #dc2626;
+    font-weight: bold;
+    margin-left: 2px;
+  }
 
   .field-control {
     @apply h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100;
+  }
+
+  .legacy-input {
+    @apply h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 disabled:bg-slate-100 disabled:text-slate-500;
+  }
+
+  .legacy-plus-button {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-sm font-bold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-200 active:bg-slate-300;
+  }
+
+  .legacy-small-button {
+    @apply inline-flex h-8 items-center justify-center rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-500;
+  }
+
+  .legacy-action-button {
+    @apply inline-flex h-9 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500;
   }
 
   .data-table {
@@ -64,7 +131,7 @@
   }
 
   .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    @apply bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
   }
   .btn-secondary {
     @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
@@ -73,7 +140,7 @@
     @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6;
   }
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent;
   }
   .label {
     @apply block text-sm font-medium text-gray-700 mb-1;
@@ -95,8 +162,367 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .referral-type-panel {
-    animation: none;
+/* ==========================================================================
+   CLINICAL MEDICAL REPORT DOCUMENT & PRINT ENGINE
+   ========================================================================== */
+
+/* Universal no-print utility */
+.no-print {
+  /* Visible on screen by default */
+}
+
+/* On-screen Document Paper Sheet (A4 Proportion) */
+.report-paper-preview {
+  background: #ffffff;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 36px 44px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-family: 'Segoe UI', Arial, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  color: #000000;
+  border-radius: 3px;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Document Header Patient Demography Box */
+.document-patient-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1.5px solid #000000;
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.document-patient-table td,
+.document-patient-table th {
+  border: 1px solid #000000;
+  padding: 3.5px 8px;
+  vertical-align: middle;
+}
+
+.document-patient-table .th-label {
+  font-weight: 700;
+  color: #000000;
+  width: 18%;
+  white-space: nowrap;
+}
+
+.document-patient-table .td-val {
+  color: #000000;
+  width: 32%;
+}
+
+/* Two-Column Clinical Findings Rows with Vertically Aligned Colons */
+.document-echo-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #000000;
+}
+
+.document-echo-row {
+  display: grid;
+  grid-template-columns: 215px 16px 1fr;
+  align-items: baseline;
+}
+
+.document-echo-label {
+  font-weight: 500;
+  color: #000000;
+}
+
+.document-echo-colon {
+  font-weight: 600;
+  color: #000000;
+  text-align: center;
+}
+
+.document-echo-val {
+  color: #000000;
+  white-space: pre-line;
+}
+
+/* Measurement Tables */
+.document-measure-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #777777;
+  margin: 10px 0 16px 0;
+  font-size: 12px;
+}
+
+.document-measure-table th,
+.document-measure-table td {
+  border: 1px solid #999999;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.document-measure-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* ==========================================================================
+   OFFICIAL CLINICAL REPORT TEMPLATE ENGINE (Matching User's Attached Template)
+   ========================================================================== */
+.report-template-sheet {
+  --med-blue: #2c3e50;
+  --highlight: #e8f4fd;
+  background: #ffffff;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 30px 36px;
+  border-radius: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #1e293b;
+  box-sizing: border-box;
+}
+
+.report-template-header {
+  text-align: center;
+  border-bottom: 3px solid #2c3e50;
+  margin-bottom: 14px;
+  padding-bottom: 6px;
+}
+
+.report-template-header h1 {
+  color: #2c3e50;
+  margin: 4px 0;
+  font-size: 18px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.report-patient-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+  border: 1px solid #e2e8f0;
+  padding: 10px 14px;
+  background: #fafbfc;
+  border-radius: 4px;
+  font-size: 11.5px;
+}
+
+.report-section-banner {
+  background: #2c3e50 !important;
+  color: #ffffff !important;
+  padding: 5px 10px;
+  font-weight: 700;
+  font-size: 11.5px;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  border-radius: 2px;
+  letter-spacing: 0.3px;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+.report-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.report-data-table th,
+.report-data-table td {
+  border: 1px solid #e0e0e0;
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.report-data-table th {
+  background-color: #f1f5f9;
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 11px;
+}
+
+.report-data-table .row-label {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  width: 28%;
+  color: #1e293b;
+}
+
+.report-data-table .sub-label {
+  padding-left: 20px;
+  font-style: italic;
+  width: 25%;
+  color: #475569;
+}
+
+.report-ratio-badge {
+  background: #e8f4fd;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  color: #2c3e50;
+  display: inline-block;
+}
+
+/* Modal Content Background Transparency */
+.preview-modal-content {
+  background-color: transparent !important;
+}
+
+
+/* ==========================================================================
+   PRINT MEDIA RULES - ZERO POLLUTION, CLEAN A4 CLINICAL PRINTS
+   ========================================================================== */
+@media print {
+  /* 1. HIDE ALL APPLICATION NAVIGATION, HEADER, SIDEBAR, BUTTONS & FORMS */
+  .no-print,
+  .no-print *,
+  aside,
+  header:not(.clinical-print-header),
+  nav,
+  .report-editor-form,
+  .preview-modal-toolbar,
+  .toolbar-button,
+  .legacy-small-button,
+  .legacy-plus-button,
+  .legacy-action-button,
+  .primary-button,
+  .secondary-button,
+  .btn-primary,
+  .btn-secondary,
+  button:not(.allow-print) {
+    display: none !important;
+  }
+
+  /* 2. RESET ROOT & PAGE BACKGROUND TO CRISP WHITE */
+  html,
+  body,
+  #root {
+    background: #ffffff !important;
+    color: #000000 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 10pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 3. NEUTRALIZE SCREEN FLEXBOX / FULLSCREEN WRAPPERS */
+  .flex,
+  .flex.h-screen,
+  div[class*="flex"][class*="h-screen"],
+  main,
+  .overflow-hidden,
+  .overflow-auto,
+  .overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* 4. MODAL BACKDROP RESET FOR PRINTING */
+  .preview-modal-backdrop {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+    inset: auto !important;
+    box-shadow: none !important;
+  }
+
+  .preview-modal-content {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+  }
+
+  /* 5. PRINTABLE REPORT SHEET FULL BLEED */
+  .printable-report {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Clinical report header must survive the application chrome reset. */
+  .clinical-print header,
+  .clinical-print-header,
+  .clinical-print header * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  .report-paper-preview,
+  .report-template-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+  }
+
+  /* 6. MULTI-PAGE & PAGE BREAK HANDLING */
+  .document-page-sheet {
+    page-break-after: always !important;
+    break-after: page !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    min-height: auto !important;
+    height: auto !important;
+  }
+
+  .document-page-sheet:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm 15mm 15mm;
   }
 }

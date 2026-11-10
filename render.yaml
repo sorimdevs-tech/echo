@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: cardioecho-ai
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: DB_PATH
+        value: /var/data/echo.db
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+    disk:
+      name: echo-data
+      mountPath: /var/data
+      sizeGB: 1

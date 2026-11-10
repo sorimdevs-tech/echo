@@ -1,0 +1,14 @@
+@media print {
+  body:has(.clinical-preview) > #root { display: none !important; }
+  body:has(.clinical-preview) * { visibility: hidden !important; }
+  body:has(.clinical-preview) .clinical-print, body:has(.clinical-preview) .clinical-print * { visibility: visible !important; }
+  .clinical-print header, .clinical-print header * { display: block !important; visibility: visible !important; }
+  .clinical-preview { position: absolute !important; inset: 0 !important; overflow: visible !important; background: white !important; padding: 0 !important; }
+  .clinical-print { width: 100% !important; max-width: none !important; padding: 12mm !important; box-shadow: none !important; }
+  .clinical-print h1, .clinical-print h2, .clinical-print h3 { break-after: avoid; }
+  .clinical-print section > div, .clinical-print footer { break-inside: avoid; }
+  .clinical-print-page { break-after: page; page-break-after: always; margin: 0 !important; }
+  .clinical-print-page:last-child { break-after: auto; page-break-after: auto; }
+  .clinical-print-meta, .clinical-print-frame { break-inside: avoid; page-break-inside: avoid; }
+  .no-print { display: none !important; }
+}

@@ -35,3 +35,12 @@ coverage/
 # Cache
 .cache/
 *.pyc
+backend/.local-credentials.json
+backend/.workflow-users.json
+backend/.workflow-users.json.tmp
+*.db-wal
+*.db-shm
+frontend/test-output/
+browser-fixture-info.json
+db.json
+backend/db.json
