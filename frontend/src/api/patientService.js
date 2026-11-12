@@ -1,9 +1,28 @@
 import api from './axios';
 
+let patientsCache = null;
+let patientsRequest = null;
+
+const invalidatePatients = () => {
+  patientsCache = null;
+  patientsRequest = null;
+};
+
 export const patientService = {
   getPatients: async () => {
-    const response = await api.get('/patients');
-    return response.data;
+    if (patientsCache) return patientsCache;
+    if (patientsRequest) return patientsRequest;
+
+    patientsRequest = api.get('/patients')
+      .then((response) => {
+        patientsCache = response.data;
+        return patientsCache;
+      })
+      .finally(() => {
+        patientsRequest = null;
+      });
+
+    return patientsRequest;
   },
 
   getPatient: async (id) => {
@@ -13,16 +32,24 @@ export const patientService = {
 
   createPatient: async (patientData) => {
     const response = await api.post('/patients', patientData);
+    invalidatePatients();
     return response.data;
   },
 
   updatePatient: async (id, patientData) => {
     const response = await api.put(`/patients/${id}`, patientData);
+    invalidatePatients();
     return response.data;
   },
 
   deletePatient: async (id) => {
     const response = await api.delete(`/patients/${id}`);
+    invalidatePatients();
+    return response.data;
+  },
+
+  getAllVisits: async () => {
+    const response = await api.get('/visits');
     return response.data;
   },
 
@@ -33,16 +60,19 @@ export const patientService = {
 
   addVisit: async (patientId, visitData) => {
     const response = await api.post(`/patients/${patientId}/visits`, visitData);
+    invalidatePatients();
     return response.data;
   },
 
   updateVisit: async (patientId, visitId, visitData) => {
     const response = await api.put(`/patients/${patientId}/visits/${visitId}`, visitData);
+    invalidatePatients();
     return response.data;
   },
 
   deleteVisit: async (patientId, visitId) => {
     const response = await api.delete(`/patients/${patientId}/visits/${visitId}`);
+    invalidatePatients();
     return response.data;
   },
 };

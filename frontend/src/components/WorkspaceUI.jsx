@@ -51,6 +51,7 @@ export function Section({ title, description, children, className = '' }) {
 
 export function Field({ label, optionField, addable = false, type = 'text', value, onChange, options, placeholder, rows = 3, min, max }) {
   const common = {
+    'aria-label': label,
     value: value ?? '',
     onChange: (event) => onChange?.(type === 'checkbox' ? event.target.checked : event.target.value),
   }
@@ -60,6 +61,7 @@ export function Field({ label, optionField, addable = false, type = 'text', valu
       <span>{label}</span>
       {type === 'select' && addable ? (
         <AddableSelect
+          aria-label={label}
           field={`select_${optionField || String(label).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`}
           options={options}
           value={value}

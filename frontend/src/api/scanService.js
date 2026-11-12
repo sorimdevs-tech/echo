@@ -1,5 +1,16 @@
 import api from './axios';
 
+// A clinical save must fail visibly instead of hanging the editor forever.
+const SAVE_TIMEOUT_MS = 30000;
+
+let dashboardStatsCache = null;
+let dashboardStatsRequest = null;
+
+const invalidateDashboardStats = () => {
+  dashboardStatsCache = null;
+  dashboardStatsRequest = null;
+};
+
 export const scanService = {
   getScans: async () => {
     const response = await api.get('/scans');
@@ -17,36 +28,27 @@ export const scanService = {
   },
 
   createScan: async (scanData) => {
-    const response = await api.post('/scans', scanData);
+    const response = await api.post('/scans', scanData, { timeout: SAVE_TIMEOUT_MS });
+    invalidateDashboardStats();
     return response.data;
   },
 
   updateScan: async (id, scanData) => {
-    const response = await api.put(`/scans/${id}`, scanData);
+    const response = await api.put(`/scans/${id}`, scanData, { timeout: SAVE_TIMEOUT_MS });
+    invalidateDashboardStats();
     return response.data;
   },
 
   deleteScan: async (id) => {
     const response = await api.delete(`/scans/${id}`);
+    invalidateDashboardStats();
     return response.data;
   },
 
   getDashboardStats: async () => {
-    try {
-      const response = await api.get('/dashboard/stats');
-      return response.data;
-    } catch (error) {
-      console.warn('Backend unavailable, using demo dashboard stats');
-      return {
-        success: true,
-        data: {
-          total_patients: 0,
-          total_scans: 0,
-          adult_echo: 0,
-          fetal_echo: 0,
-          pediatric_echo: 0,
-        },
-      };
+    if (!dashboardStatsRequest) {
+      dashboardStatsRequest = api.get('/dashboard/stats').then(response=>response.data).finally(()=>{dashboardStatsRequest=null})
     }
+    return dashboardStatsRequest
   },
 };

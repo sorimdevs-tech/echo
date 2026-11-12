@@ -1,59 +1,102 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Check, Download, ImagePlus, Play, Redo2, RotateCcw, Save, Trash2, Undo2, Upload } from 'lucide-react'
 import { Field, FieldGrid, Section, Tabs, Workspace } from '../components/WorkspaceUI'
+import ImageCompareModal from '../components/ImageCompareModal'
+import TiffaTemplateModal from '../components/TiffaTemplateModal'
+import SearchableSelect from '../components/SearchableSelect'
 import { patientService } from '../api/patientService'
 import { workspaceService } from '../api/workspaceService'
 
-const tabs = ['Images', 'Videos', 'Compare', 'Rule of Three', 'Patient data', 'Spooler', 'Configuration', 'Organ editor']
+const tabs = ['Images', 'Videos', 'Compare', 'Rule of Three', 'Patient data', 'Spooler', 'Organ editor']
 
 export default function ImagesViewer() {
+  const [params]=useSearchParams()
   const [activeTab, setActiveTab] = useState('Images')
   const [assets, setAssets] = useState([])
+  const [error,setError]=useState('')
   const [selected, setSelected] = useState([])
   const [patients, setPatients] = useState([])
-  const [patientId, setPatientId] = useState('')
+  const [patientId, setPatientId] = useState(params.get('patientId') || '')
   const [visits, setVisits] = useState([])
-  const [visitId, setVisitId] = useState('')
-  const [templates, setTemplates] = useState([])
+  const [visitId, setVisitId] = useState(params.get('visitId') || '')
   const [config, setConfig] = useState({ source: '', aeTitle: '', host: '', port: '', rows: '', columns: '', autoImport: false, aspectRatio:'', imageTitle:'', storageAeTitle:'', storageHost:'', storagePort:'', anonymous:false })
 
+  const patientOptions = useMemo(() => {
+    return patients.map((item) => ({
+      value: item.id,
+      label: `${item.patient_id || ''} — ${item.first_name || ''} ${item.last_name || ''}`.trim(),
+    }))
+  }, [patients])
+
   useEffect(() => {
-    Promise.all([patientService.getPatients(), workspaceService.list('media-records'), workspaceService.getSettings(), workspaceService.getTemplates()]).then(([p,m,s,t]) => {
+    Promise.all([patientService.getPatients(), workspaceService.list('media-records'), workspaceService.getSettings()]).then(([p,m,s]) => {
       setPatients(p.data || [])
       setAssets((m.data || []).map((asset) => ({...asset, url:asset.url || asset.data_url || ''})))
       setConfig((current) => ({...current,...(s.data?.imageConfig || {})}))
-      setTemplates(t.data || [])
-    }).catch(()=>{})
+    }).catch(()=>setError('Unable to load media. Refresh and retry.'))
   }, [])
 
-  useEffect(() => { if(patientId) patientService.getVisits(patientId).then((result)=>setVisits(result.data||[])); else {setVisits([]);setVisitId('')} }, [patientId])
+  useEffect(() => {
+    let active=true
+    setSelected([]);setVisits([])
+    if(patientId)patientService.getVisits(patientId).then(result=>{
+      if(!active)return
+      setVisits(result.data || []);setVisitId(current=>(result.data || []).some(v=>String(v.id)===String(current))?current:'')
+    }).catch(()=>{if(active)setError('Unable to load visits.')})
+    else setVisitId('')
+    return ()=>{active=false}
+  }, [patientId])
 
   const addFiles = async (event) => {
+    if(!patientId || !visitId){setError('Select a patient and visit before importing media.');return}
+    setError('')
     const files = [...event.target.files]
     for (const file of files) {
       const upload = new FormData()
       upload.append('file', file); upload.append('patient_id', patientId); upload.append('visit_id', visitId); upload.append('anonymous', String(config.anonymous)); upload.append('ae_title', config.storageAeTitle||config.aeTitle||''); upload.append('ip_address', config.storageHost||config.host||'')
       try { const result=await workspaceService.uploadMedia(upload);setAssets((current)=>[...current,result.data]) }
-      catch { setAssets((current)=>[...current,{patient_id:patientId,visit_id:visitId,name:file.name,type:file.type||'application/dicom',size:file.size,status:'Local only',id:`local-${Date.now()}`,url:URL.createObjectURL(file)}]) }
+      catch(error) { setError(error.response?.data?.detail || 'Upload failed. The file was not saved.');break }
     }
   }
-  const images = useMemo(() => assets.filter((asset) => asset.type.startsWith('image/')), [assets])
-  const videos = useMemo(() => assets.filter((asset) => asset.type.startsWith('video/')), [assets])
+  const scopedAssets=assets.filter(asset=>asset.status !== 'Archived' && patientId && String(asset.patient_id)===String(patientId) && (!visitId || String(asset.visit_id)===String(visitId)))
+  const images=scopedAssets.filter(asset=>String(asset.type || '').startsWith('image/'))
+  const videos=scopedAssets.filter(asset=>String(asset.type || '').startsWith('video/'))
   const toggle = (id) => setSelected(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id].slice(-2))
 
-  const uploader = <label className="primary-button cursor-pointer"><Upload className="h-4 w-4" />Import files<input className="hidden" type="file" accept="image/*,video/*,.dcm" multiple onChange={addFiles} /></label>
+  const uploader = <label className="primary-button cursor-pointer"><Upload className="h-4 w-4" />Import files<input className="hidden" type="file" accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4,video/webm" multiple onChange={addFiles} /></label>
 
   return (
-    <Workspace title="Images & DICOM" description="Import, review, compare, annotate, archive and route patient-linked clinical media." actions={uploader}>
-      <Section title="Patient and visit" className="mb-4"><div className="grid gap-3 md:grid-cols-2"><label className="field-label"><span>Patient</span><select className="field-control" value={patientId} onChange={(e)=>{setPatientId(e.target.value);setVisitId('')}}><option value="">Select</option>{patients.map((patient)=><option key={patient.id} value={patient.id}>{patient.patient_id} — {patient.first_name} {patient.last_name}</option>)}</select></label><label className="field-label"><span>Visit</span><select className="field-control" value={visitId} onChange={(e)=>setVisitId(e.target.value)}><option value="">Select</option>{visits.map((visit)=><option key={visit.id} value={visit.id}>{visit.visit_date?new Date(visit.visit_date).toLocaleString():visit.id}</option>)}</select></label></div></Section>
+    <Workspace title="Images & DICOM" description="Store and review patient-linked files. Scanner connectivity, DICOM decoding, anonymisation and PACS transfer are not configured." actions={uploader}>
+      {error && <p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-800">{error}</p>}
+      <Section title="Patient and visit" className="mb-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="field-label">
+            <span>Patient</span>
+            <SearchableSelect
+              options={patientOptions}
+              value={patientId}
+              onChange={(val) => { setPatientId(val); setVisitId('') }}
+              placeholder="Select"
+              searchPlaceholder="Search patient ID or name..."
+            />
+          </div>
+          <label className="field-label">
+            <span>Visit</span>
+            <select aria-label="Visit" className="field-control" value={visitId} onChange={(e)=>setVisitId(e.target.value)}>
+              <option value="">Select</option>
+              {visits.map((visit)=><option key={visit.id} value={visit.id}>{visit.visit_date?new Date(visit.visit_date).toLocaleString():visit.id}</option>)}
+            </select>
+          </label>
+        </div>
+      </Section>
       <Tabs items={tabs} value={activeTab} onChange={setActiveTab} />
       {activeTab === 'Images' && <MediaGrid assets={images} selected={selected} toggle={toggle} empty="Import an image or DICOM export to begin." />}
       {activeTab === 'Videos' && <VideoGrid assets={videos} />}
-      {activeTab === 'Compare' && <Compare assets={images.filter((asset) => selected.includes(asset.id))} all={images} toggle={toggle} />}
-      {activeTab === 'Rule of Three' && <RuleImageTemplate templates={templates} setTemplates={setTemplates} images={images} />}
-      {activeTab === 'Patient data' && <PatientData assets={assets} />}
-      {activeTab === 'Spooler' && <Spooler assets={assets} setAssets={setAssets} />}
-      {activeTab === 'Configuration' && <Section title="DICOM SCU, storage and image/video view configuration"><FieldGrid fields={[{key:'source',label:'Input source',type:'select',options:['DICOM folder','PACS server','Capture device']},{key:'aeTitle',label:'Local AE title'},{key:'host',label:'Local IP address'},{key:'port',label:'Local port',type:'number'},{key:'storageAeTitle',label:'Storage AE title'},{key:'storageHost',label:'Storage IP address'},{key:'storagePort',label:'Storage port',type:'number'},{key:'rows',label:'Viewer rows',type:'select',options:['1','2','3','4']},{key:'columns',label:'Viewer columns',type:'select',options:['1','2','3','4']},{key:'aspectRatio',label:'Image/video aspect ratio',type:'select',options:['Original','4:3','16:9','1:1']},{key:'imageTitle',label:'Image title name'},{key:'autoImport',label:'Auto import',type:'checkbox'},{key:'anonymous',label:'Anonymous images',type:'checkbox'}]} data={config} setData={setConfig} /><button className="primary-button mt-5" onClick={async()=>{const s=await workspaceService.getSettings();await workspaceService.saveSettings({...s.data,imageConfig:config})}}><Save className="h-4 w-4" />Save configuration</button></Section>}
+      {activeTab === 'Compare' && (patientId && visitId ? <ImageCompareModal open patient={patients.find(p=>String(p.id)===String(patientId))} visitId={visitId} images={images.map(a=>a.url)} mediaRecords={images} onClose={()=>setActiveTab('Images')}/> : <p>Select a patient and visit to compare images.</p>)}
+      {activeTab === 'Rule of Three' && (patientId && visitId ? <TiffaTemplateModal open patient={patients.find(p=>String(p.id)===String(patientId))} visitId={visitId} images={images.map(a=>a.url)} mediaRecords={images} onClose={()=>setActiveTab('Images')}/> : <p>Select a patient and visit to arrange images.</p>)}
+      {activeTab === 'Patient data' && <PatientData assets={scopedAssets} />}
+      {activeTab === 'Spooler' && <Spooler assets={scopedAssets} setAssets={setAssets} />}
       {activeTab === 'Organ editor' && <OrganEditor image={images.find((asset)=>selected.includes(asset.id))} patientId={patientId} visitId={visitId} onGoToImages={()=>setActiveTab('Images')} onSaved={(asset)=>setAssets((current)=>[...current,asset])} />}
     </Workspace>
   )
@@ -71,27 +114,14 @@ function VideoGrid({ assets }) {
   return <div><label className="field-label mb-4 max-w-lg"><span>Search video title</span><input className="field-control" value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Press enter or type a title"/></label><div className="grid gap-4 lg:grid-cols-2">{shown.map((asset) => <div key={asset.id} className="rounded-xl border border-slate-200 bg-slate-950 p-3"><video src={asset.url} controls className="aspect-video w-full" /><p className="mt-2 text-sm text-white">{asset.name}</p></div>)}</div></div>
 }
 
-function Compare({ assets, all, toggle }) {
-  return <div><p className="mb-4 text-sm text-slate-500">Select any two images below to compare them side by side.</p><div className="grid gap-4 lg:grid-cols-2">{[0,1].map((slot) => <div key={slot} className="flex aspect-video items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-950">{assets[slot] ? <img src={assets[slot].url} className="h-full w-full object-contain" alt="Comparison" /> : <span className="text-sm text-slate-400">Comparison image {slot+1}</span>}</div>)}</div><div className="mt-4 flex gap-2 overflow-x-auto">{all.map((asset) => <button key={asset.id} onClick={() => toggle(asset.id)}><img src={asset.url} alt={asset.name} className="h-20 w-28 rounded-lg border border-slate-200 object-cover" /></button>)}</div></div>
-}
-
 function PatientData({ assets }) {
   return <Section title="Patient data archival" description="Double-click an image, video or archived document to open it."><div className="overflow-auto"><table className="data-table"><thead><tr><th>Patient ID</th><th>Visit ID</th><th>File</th><th>Format</th><th>Size</th><th>Anonymous</th><th>Status</th></tr></thead><tbody>{assets.map((asset) => <tr key={asset.id} onDoubleClick={()=>asset.url&&window.open(asset.url,'_blank')}><td>{asset.patient_id||'—'}</td><td>{asset.visit_id||'—'}</td><td>{asset.name}</td><td>{asset.type || 'DICOM'}</td><td>{Math.round(asset.size/1024)} KB</td><td>{asset.anonymous?'Yes':'No'}</td><td><span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">{asset.status||'Ready'}</span></td></tr>)}</tbody></table>{!assets.length && <p className="py-10 text-center text-sm text-slate-500">No imported patient media.</p>}</div></Section>
 }
 
-function RuleImageTemplate({templates,setTemplates,images}) {
-  const [templateId,setTemplateId]=useState(''),[placements,setPlacements]=useState([]),[activeSlot,setActiveSlot]=useState(0)
-  const template=templates.find((item)=>item.id===templateId)
-  const count=template?Number((template.layout||'3')[0])**2:9
-  useEffect(()=>setPlacements(template?.placements||[]),[templateId])
-  const place=(asset)=>{const next=[...placements];next[activeSlot]=asset.id;setPlacements(next);setActiveSlot(Math.min(activeSlot+1,count-1))}
-  const save=async()=>{if(!template)return;const result=await workspaceService.updateTemplate(template.id,{...template,placements});setTemplates(templates.map((item)=>item.id===template.id?result.data:item))}
-  return <div className="grid gap-4 xl:grid-cols-[280px_1fr]"><Section title="Template and image list"><label className="field-label"><span>Template name</span><select className="field-control" value={templateId} onChange={(e)=>setTemplateId(e.target.value)}><option value="">Select</option>{templates.map((item)=><option key={item.id} value={item.id}>{item.title||item.name}</option>)}</select></label><p className="my-3 text-xs text-slate-500">Select a target frame, then double-click an image to place it.</p><div className="grid grid-cols-2 gap-2">{images.map((asset)=><button key={asset.id} onDoubleClick={()=>place(asset)} onClick={()=>place(asset)}><img src={asset.url} alt={asset.name} className="aspect-video w-full rounded border object-cover"/><span className="block truncate text-xs">{asset.name}</span></button>)}</div><button className="primary-button mt-4" onClick={save} disabled={!template}><Save className="h-4 w-4"/>Save placement</button></Section><Section title={template?.title||'Rule of Three'} description="Click a frame to choose where the next selected image will be placed."><div className={`grid gap-3 ${count===4?'grid-cols-2':count===16?'grid-cols-4':'grid-cols-3'}`}>{Array.from({length:count}).map((_,index)=>{const asset=images.find((item)=>item.id===placements[index]);return <button key={index} onClick={()=>setActiveSlot(index)} className={`flex aspect-video items-center justify-center overflow-hidden rounded-lg border-2 ${activeSlot===index?'border-primary-500 bg-primary-50':'border-dashed border-slate-300 bg-slate-50'}`}>{asset?<img src={asset.url} alt={asset.name} className="h-full w-full object-contain"/>:<span className="text-xs text-slate-500">{template?.views?.[index]||`Unassigned ${index+1}`}</span>}</button>})}</div></Section></div>
-}
-
 function Spooler({ assets, setAssets }) {
-  const remove=async(asset)=>{if(asset.id&&!asset.id.startsWith('local-'))await workspaceService.remove('media-records',asset.id);setAssets(assets.filter((item)=>item.id!==asset.id))}
-  return <Section title="Transfer spooler" description="Files queued for the patient record or configured PACS destination."><div className="overflow-auto"><table className="data-table"><thead><tr><th>Patient ID</th><th>Image ID</th><th>AE title</th><th>IP address</th><th>Status</th><th/></tr></thead><tbody>{assets.map((asset)=><tr key={asset.id}><td>{asset.patient_id||'—'}</td><td>{asset.id}</td><td>{asset.ae_title||'—'}</td><td>{asset.ip_address||'—'}</td><td className="text-emerald-700">{asset.status||'Ready'}</td><td><button onClick={()=>remove(asset)} className="rounded p-2 text-red-600"><Trash2 className="h-4 w-4"/></button></td></tr>)}</tbody></table></div>{!assets.length&&<p className="py-10 text-center text-sm text-slate-500">The transfer queue is empty.</p>}</Section>
+  const [error,setError]=useState('')
+  const remove=async(asset)=>{setError('');try{if(asset.id&&!String(asset.id).startsWith('local-'))await workspaceService.remove('media-records',asset.id);setAssets(current=>current.filter(item=>item.id!==asset.id))}catch(err){setError(err.response?.data?.detail || 'Unable to archive media. Retry.')}}
+  return <Section title="Stored media records" description="Local storage status only. No PACS transfer queue is implemented.">{error && <p role="alert">{error}</p>}<div className="overflow-auto"><table className="data-table"><thead><tr><th>Patient ID</th><th>Image ID</th><th>AE title</th><th>IP address</th><th>Status</th><th/></tr></thead><tbody>{assets.map((asset)=><tr key={asset.id}><td>{asset.patient_id||'—'}</td><td>{asset.id}</td><td>{asset.ae_title||'—'}</td><td>{asset.ip_address||'—'}</td><td className="text-emerald-700">{asset.status||'Ready'}</td><td><button title="Archive media (original preserved)" onClick={()=>remove(asset)} className="rounded p-2 text-red-600"><Trash2 className="h-4 w-4"/></button></td></tr>)}</tbody></table></div>{!assets.length&&<p className="py-10 text-center text-sm text-slate-500">The transfer queue is empty.</p>}</Section>
 }
 
 function OrganEditor({image,patientId,visitId,onGoToImages,onSaved}) {
@@ -148,7 +178,7 @@ function OrganEditor({image,patientId,visitId,onGoToImages,onSaved}) {
   const loadImage=(url)=>new Promise((resolve,reject)=>{const source=new Image();source.onload=()=>resolve(source);source.onerror=reject;source.src=url})
   const composite=async()=>{const output=document.createElement('canvas');output.width=canvasRef.current.width;output.height=canvasRef.current.height;const ctx=output.getContext('2d');const source=await loadImage(image.url);ctx.drawImage(source,0,0,output.width,output.height);ctx.drawImage(canvasRef.current,0,0);return output}
   const download=async()=>{const output=await composite();const link=document.createElement('a');link.download=`${image.name.replace(/\.[^.]+$/,'')}-annotation.png`;link.href=output.toDataURL('image/png');link.click();setMessage('Annotated image exported.')}
-  const saveAnnotation=async()=>{setSaving(true);try{const output=await composite();const blob=await new Promise((resolve)=>output.toBlob(resolve,'image/png'));const upload=new FormData();upload.append('file',blob,`${image.name.replace(/\.[^.]+$/,'')}-annotation.png`);upload.append('patient_id',patientId||image.patient_id||'');upload.append('visit_id',visitId||image.visit_id||'');upload.append('anonymous',String(image.anonymous||false));const result=await workspaceService.uploadMedia(upload);const updated=await workspaceService.update('media-records',result.data.id,{...result.data,source_media_id:image.id,stamp_name:stampName,annotation_notes:notes});onSaved?.(updated.data);setSaved(true);setMessage('Annotation saved to the patient media record.')}finally{setSaving(false)}}
+  const saveAnnotation=async()=>{setSaving(true);try{const output=await composite();const blob=await new Promise((resolve)=>output.toBlob(resolve,'image/png'));const upload=new FormData();upload.append('file',blob,`${image.name.replace(/\.[^.]+$/,'')}-annotation.png`);upload.append('patient_id',patientId||image.patient_id||'');upload.append('visit_id',visitId||image.visit_id||'');upload.append('anonymous',String(image.anonymous||false));const result=await workspaceService.uploadMedia(upload);const updated=await workspaceService.update('media-records',result.data.id,{...result.data,source_media_id:image.id,stamp_name:stampName,annotation_notes:notes});onSaved?.(updated.data);setSaved(true);setMessage('Annotation saved to the patient media record.')}catch(err){setSaved(false);setMessage(err.response?.data?.detail || 'Unable to save the annotation. Your drawing is still on this page.')}finally{setSaving(false)}}
   const canUndo=historyVersion>=0&&historyIndex.current>0,canRedo=historyVersion>=0&&historyIndex.current<history.current.length-1
 
   return <div className="space-y-4"><WorkflowSteps current={saved?4:hasDrawing?3:tool==='Pointer'?2:3}/><div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-primary-900"><strong>Editing:</strong> {image.name}</p><p className="text-sm font-medium text-primary-700">{message}</p></div></div><div className="grid min-h-[540px] gap-4 xl:grid-cols-[minmax(0,1fr)_300px]"><div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-950"><div className="flex flex-wrap items-center gap-2 border-b border-slate-700 p-3">{['Pointer','Freehand','Line','Angle','Ellipse','Text','Eraser'].map((item)=><button key={item} onClick={()=>chooseTool(item)} aria-pressed={tool===item} className={`rounded px-3 py-1.5 text-xs font-medium transition ${tool===item?'bg-primary-600 text-white':'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>{item}</button>)}<span className="mx-1 h-6 w-px bg-slate-700"/><label className="flex items-center gap-2 text-xs text-slate-300">Colour<input type="color" value={colour} onChange={(e)=>setColour(e.target.value)} title="Annotation colour"/></label><label className="flex items-center gap-2 text-xs text-slate-300">Size<input className="w-24" type="range" min="1" max="18" value={size} onChange={(e)=>setSize(Number(e.target.value))}/></label><button onClick={undo} disabled={!canUndo} className="rounded bg-slate-800 p-2 text-white disabled:opacity-30" title="Undo"><Undo2 className="h-4 w-4"/></button><button onClick={redo} disabled={!canRedo} className="rounded bg-slate-800 p-2 text-white disabled:opacity-30" title="Redo"><Redo2 className="h-4 w-4"/></button><button onClick={reset} className="rounded bg-slate-800 p-2 text-white" title="Clear annotations"><RotateCcw className="h-4 w-4"/></button></div><div className="relative aspect-video w-full overflow-hidden bg-slate-950"><img src={image.url} alt={image.name} className="absolute inset-0 h-full w-full object-fill"/><canvas ref={canvasRef} width="1200" height="720" onMouseDown={start} onMouseMove={drawShape} onMouseUp={finish} onMouseLeave={finish} className={`absolute inset-0 h-full w-full ${tool==='Pointer'?'cursor-default':tool==='Text'?'cursor-text':'cursor-crosshair'}`}/></div></div><Section title="Annotation details"><Field label="Stamp name" value={stampName} onChange={setStampName}/><div className="mt-3"><Field type="textarea" rows={8} label="Notes" value={notes} onChange={setNotes}/></div><div className="mt-4 space-y-2"><button onClick={saveAnnotation} disabled={!hasDrawing||saving} className="primary-button w-full justify-center disabled:opacity-40"><Save className="h-4 w-4"/>{saving?'Saving…':'Save to patient media'}</button><button onClick={download} disabled={!hasDrawing} className="secondary-button w-full justify-center disabled:opacity-40"><Download className="h-4 w-4"/>Export PNG</button><button onClick={onGoToImages} className="secondary-button w-full justify-center"><ImagePlus className="h-4 w-4"/>Choose another image</button></div>{saved&&<p className="mt-3 flex items-center gap-2 text-sm font-medium text-emerald-700"><Check className="h-4 w-4"/>Saved successfully</p>}</Section></div></div>

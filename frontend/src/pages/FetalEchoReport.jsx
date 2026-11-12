@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import EditableOptions from '../components/EditableOptions'
+import { blankReport, mergeReport, reportSaveError } from '../reportValidation'
+import { isDerivedPath, recalculateDerived, initializeDerived } from '../derivedMeasurements'
+import { currentUser, useCompletionConfirmation, useDerivedDefinitions, ApprovalControls, ClinicalFooter, ClinicalPreview, reportErrors, useSavedNavigation } from '../components/ClinicalWorkflow'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  Cog,
   FileImage,
+  FileText,
+  FolderOpen,
   Image,
   Printer,
   RotateCcw,
@@ -12,30 +19,28 @@ import {
 import { patientService } from '../api/patientService'
 import { scanService } from '../api/scanService'
 
-const mainTabs = [
-  { id: 'scan', label: 'Scan' },
-  { id: 'impression', label: 'Impression' },
-]
+import ImagesModal from '../components/ImagesModal'
+import SearchableSelect from '../components/SearchableSelect'
+import ExistingScansModal from '../components/ExistingScansModal'
+import ReferralLetterModal from '../components/ReferralLetterModal'
+import AddableSelect from '../components/AddableSelect'
+
+const ClinicalComments = createContext(null)
 
 const scanTabs = [
   { id: 'echo-details', label: 'Echo details' },
+  { id: 'aortic', label: 'Aortic' },
   { id: 'biometry', label: 'Biometry' },
   { id: 'doppler', label: 'Doppler' },
-  { id: 'aortic', label: 'Aortic stenosis parameters' },
-]
-
-const imageTabs = [
-  { id: 'images', label: 'Images' },
-  { id: 'multiframes', label: 'MultiFrames' },
 ]
 
 const initialReport = {
   indication: '',
   tag: '',
   add_new_tag: false,
-  no_of_fetuses: '1',
-  ga_weeks: '20',
-  ga_days: '6',
+  no_of_fetuses: '',
+  ga_weeks: '',
+  ga_days: '',
   print_options: {
     biometry: true,
     doppler: true,
@@ -50,9 +55,9 @@ const initialReport = {
     lmp_date: '',
     edd: '',
     assigned_by: 'lmp',
-    et_date: false,
+    et_date: '',
     bt_date: false,
-    no_of_fetuses: 'Single',
+    no_of_fetuses: '',
   },
   echo_details: {
     general: {
@@ -214,7 +219,7 @@ const initialReport = {
     },
   },
   impression: {
-    report_title: 'Echo Cardiography Report',
+    report_title: 'Fetal Echocardiography Report',
     first_line: '',
     header_comments: '',
     footer_comments: '',
@@ -293,26 +298,178 @@ function getPatientName(patient) {
   return name || patient.patient_id || ''
 }
 
+const fetalNormalComments = {
+  general: {
+    cardiac_views: 'Normal (Situs)',
+    abdominal_situs: 'Normal',
+    stomach: 'Left Sided',
+    heart_size: 'Normal',
+    apex: 'Normal',
+    cardiac_axis: 'Normal',
+    rhythm: 'Normal\n1:1 AV conduction',
+    fhr: '137',
+    pericardial_effusion: false,
+  },
+  four_chamber: {
+    atria: 'Normal',
+    ventricles: 'Normal',
+    atrioventricular_junction: 'Concordant, normal av connection',
+    atrioventricular_regurgitation: 'None',
+    interventricular_septum: 'Intact (well seen)',
+    ventricular_function: 'Normal',
+    interatrial_septum: 'Normal (Foramen Ovale in mid third of septum, flap valve in LA)',
+    foramen_ovale: 'Normal flow (Right to Left )',
+  },
+  outflow_tract: {
+    outflow_tracts: 'Normal',
+    great_arteries_relationship: 'Concordant',
+    va_valve_regurgitation: 'None',
+    branch_pulmonary_artery: 'Confluent, good sized',
+    ductus_arteriosus: 'Normal in size and flow',
+    aortic_arch: 'Normal',
+    side_of_arch: 'Normal, left of trachea',
+    three_vessel_view: 'Normal',
+    three_vt_view: 'Normal',
+  },
+  others: {
+    systemic_veins: 'Normal',
+    pulmonary_veins: 'Normal',
+    other_lesions: 'Normal origin of right subclavian artery',
+  },
+}
+
 function FetalEchoReport() {
   const navigate = useNavigate()
+  const calculationRules = useDerivedDefinitions()
+  const {confirmCompletion,completionDialog}=useCompletionConfirmation()
   const { scanId } = useParams()
   const [searchParams] = useSearchParams()
   const [patients, setPatients] = useState([])
   const [selectedPatientId, setSelectedPatientId] = useState(searchParams.get('patientId') || '')
-  const [selectedVisitId] = useState(searchParams.get('visitId') || '')
-  const [activeMainTab, setActiveMainTab] = useState('scan')
-  const [activeScanTab, setActiveScanTab] = useState('echo-details')
+  const [selectedVisitId, setSelectedVisitId] = useState(searchParams.get('visitId') || '')
+  const [activeScanTab, setActiveScanTab] = useState('lmp')
+  const [visits, setVisits] = useState([])
   const [activeImageTab, setActiveImageTab] = useState('images')
-  const [isLmpOpen, setIsLmpOpen] = useState(false)
-  const [report, setReport] = useState(() => deepClone(initialReport))
+  const [isImagesModalOpen, setIsImagesModalOpen] = useState(false)
+  const [isReportPreviewOpen, setIsReportPreviewOpen] = useState(false)
+  const [isExistingScansOpen, setIsExistingScansOpen] = useState(false)
+  const [isReferralLetterOpen, setIsReferralLetterOpen] = useState(false)
+  const [report, setReport] = useState(() => initializeDerived(blankReport(initialReport), 'Fetal Echo'))
   const [savedScanId, setSavedScanId] = useState(scanId || '')
   const [isSaving, setIsSaving] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
+  const [progressValidationAttempted, setProgressValidationAttempted] = useState(false)
+  const [savedReportPath, setSavedReportPath] = useState('')
+  const [locked, setLocked] = useState(false)
+  const { dirty, navigationDialog, markSaved, navigateSection } = useSavedNavigation(report)
+
+  useEffect(() => {
+    if (savedReportPath && !dirty) {
+      navigate(savedReportPath, { replace: true })
+      setSavedReportPath('')
+    }
+  }, [savedReportPath, dirty, navigate])
 
   const selectedPatient = useMemo(
-    () => patients.find((patient) => patient.id === selectedPatientId),
+    () => patients.find((patient) => String(patient.id) === String(selectedPatientId)),
     [patients, selectedPatientId],
   )
+
+  const isNormalCommentsPopulated = useMemo(() => {
+    const gen = report.echo_details?.general
+    const fc = report.echo_details?.four_chamber
+    const ot = report.echo_details?.outflow_tract
+    const oth = report.echo_details?.others
+
+    return Boolean(
+      gen?.cardiac_views || gen?.abdominal_situs || gen?.stomach ||
+      fc?.atria || fc?.ventricles || ot?.outflow_tracts || oth?.systemic_veins
+    )
+  }, [report.echo_details])
+
+  const scatterNormalComments = () => {
+    if (locked) return
+    setReport((current) => ({
+      ...current,
+      echo_details: {
+        ...current.echo_details,
+        general: {
+          ...current.echo_details.general,
+          ...fetalNormalComments.general,
+        },
+        four_chamber: {
+          ...current.echo_details.four_chamber,
+          ...fetalNormalComments.four_chamber,
+        },
+        outflow_tract: {
+          ...current.echo_details.outflow_tract,
+          ...fetalNormalComments.outflow_tract,
+        },
+        others: {
+          ...current.echo_details.others,
+          ...fetalNormalComments.others,
+        },
+      },
+      impression: {
+        ...current.impression,
+        final_impression: 'Fetal Echocardiography did not reveal any major abnormality in the structure, function or rhythm of the Fetal heart',
+        disclaimer_comments: 'Limitation of Fetal Echocardiography is to be understood as intention of Fetal Echo is to rule out major cardiac defects and minor or evolving anomalies may not be detected. Sometimes it may not be possible to see certian types of holes or valve problems in fetal life. In addition heart rate/ rhythm problems or heart muscle diseases usually evolve during late gestation when second trimester scan may not show such abnormality.',
+      },
+    }))
+  }
+
+  const toggleNormalComments = () => {
+    if (locked) return
+    if (isNormalCommentsPopulated) {
+      setReport((current) => ({
+        ...current,
+        echo_details: {
+          ...current.echo_details,
+          general: {
+            ...current.echo_details.general,
+            cardiac_views: '',
+            abdominal_situs: '',
+            stomach: '',
+            heart_size: '',
+            apex: '',
+            cardiac_axis: '',
+            rhythm: '',
+          },
+          four_chamber: {
+            ...current.echo_details.four_chamber,
+            atria: '',
+            ventricles: '',
+            atrioventricular_junction: '',
+            atrioventricular_regurgitation: '',
+            interventricular_septum: '',
+            ventricular_function: '',
+            interatrial_septum: '',
+            foramen_ovale: '',
+          },
+          outflow_tract: {
+            ...current.echo_details.outflow_tract,
+            outflow_tracts: '',
+            va_valve_regurgitation: '',
+            branch_pulmonary_artery: '',
+            ductus_arteriosus: '',
+            aortic_arch: '',
+            side_of_arch: '',
+            three_vessel_view: '',
+            three_vt_view: '',
+          },
+          others: {
+            ...current.echo_details.others,
+            systemic_veins: '',
+            pulmonary_veins: '',
+          },
+        },
+      }))
+    } else {
+      scatterNormalComments()
+    }
+  }
+
+
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -322,7 +479,7 @@ function FetalEchoReport() {
           setPatients(result.data)
         }
       } catch (error) {
-        console.error('Error loading patients:', error)
+        setStatusMessage('Unable to load patients. Refresh and retry.')
       }
     }
 
@@ -330,56 +487,80 @@ function FetalEchoReport() {
   }, [])
 
   useEffect(() => {
+    if (!selectedPatientId) { setVisits([]); return }
+    let active = true
+    patientService.getVisits(selectedPatientId).then(result => {
+      if (active) setVisits(result.data || [])
+    }).catch(() => { if (active) setStatusMessage('Unable to load visits for this patient.') })
+    return () => { active = false }
+  }, [selectedPatientId])
+
+  useEffect(() => {
     if (!scanId) return
+    let active = true
 
     const fetchScan = async () => {
       try {
         const result = await scanService.getScan(scanId)
-        if (!result.success) return
+        if (!active || !result.success) return
 
         const scan = result.data
         setSelectedPatientId(scan.patient_id || selectedPatientId)
+        setLocked(String(scan.status).toLowerCase() === 'completed')
         setSavedScanId(scan.id)
-        setReport({
-          ...deepClone(initialReport),
+        setSelectedVisitId(scan.visit_id || '')
+        const loadedReport = mergeReport(blankReport(initialReport), {
           ...(scan.fetal_echo_report || {}),
-          indication: scan.indicator || scan.fetal_echo_report?.indication || '',
+          indication: scan.indication || scan.indicator || scan.fetal_echo_report?.indication || '',
           tag: scan.tag || scan.fetal_echo_report?.tag || '',
-          no_of_fetuses: scan.no_of_fetuses || scan.fetal_echo_report?.no_of_fetuses || '1',
-          ga_weeks: scan.ga_weeks || scan.fetal_echo_report?.ga_weeks || '20',
-          ga_days: scan.ga_days || scan.fetal_echo_report?.ga_days || '6',
+          no_of_fetuses: scan.no_of_fetuses || scan.fetal_echo_report?.no_of_fetuses || '',
+          ga_weeks: scan.ga_weeks || scan.fetal_echo_report?.ga_weeks || '',
+          ga_days: scan.ga_days || scan.fetal_echo_report?.ga_days || '',
         })
+        const normalized = recalculateDerived(loadedReport, calculationRules, 'Fetal Echo')
+        setReport(normalized)
+        markSaved(normalized)
+        if(searchParams.get('preview')==='1')setIsReportPreviewOpen(true)
       } catch (error) {
+        if (!active) return
         console.error('Error loading fetal echo scan:', error)
         setStatusMessage('Could not load this fetal echo report.')
       }
     }
 
     fetchScan()
+    return () => { active = false }
   }, [scanId])
 
+  useEffect(() => {
+    const fields = document.querySelectorAll('.report-editor-form input, .report-editor-form select, .report-editor-form textarea')
+    for (const field of fields) field.disabled = locked || isSaving || field.dataset.roleLocked === 'true'
+    const wheel = e => { if (e.target instanceof HTMLInputElement && e.target.type === 'number' || e.target instanceof HTMLSelectElement) e.target.blur() }
+    document.addEventListener('wheel', wheel, {passive:true})
+    return () => document.removeEventListener('wheel', wheel)
+  }, [locked, report, isSaving])
+  useEffect(() => {
+    if(calculationRules.length && !locked)setReport(current=>recalculateDerived(current,calculationRules,'Fetal Echo'))
+  }, [calculationRules, locked])
   const updateReport = (path, value) => {
-    setReport((current) => setNestedValue(current, path, value))
+    if (locked || isDerivedPath(path)) return
+    setReport((current) => recalculateDerived(setNestedValue(current, path, value), calculationRules, 'Fetal Echo'))
     setStatusMessage('')
   }
 
-  const handleLmpDateChange = (value) => {
-    const lmpDate = value ? new Date(`${value}T00:00:00`) : null
-    const edd = lmpDate ? toInputDate(addDays(lmpDate, 280)) : ''
-
-    setReport((current) => ({
-      ...current,
-      lmp: {
-        ...current.lmp,
-        lmp_date: value,
-        edd,
-      },
-    }))
-  }
+  const handleLmpDateChange = value => updateReport(['lmp','lmp_date'], value)
 
   const handleSave = async () => {
+    if (locked || isSaving) return false
+    const errors = reportErrors(report, true, report.impression?.report_completed)
+    if (errors.length) { setStatusMessage('Not saved. ' + errors.join(' ')); return false }
+    if (report.impression?.report_completed && !(await confirmCompletion())) return false
     if (!selectedPatientId) {
       setStatusMessage('Select a patient before saving this fetal echo report.')
+      return
+    }
+    if (!selectedVisitId) {
+      setStatusMessage('Select or create a patient visit before saving this fetal echo report.')
       return
     }
 
@@ -408,209 +589,163 @@ function FetalEchoReport() {
       if (result.success) {
         const nextScanId = result.data.id
         setSavedScanId(nextScanId)
+        setReport(result.data.fetal_echo_report || report)
+        markSaved(result.data.fetal_echo_report || report)
+        setLocked(Boolean(report.impression?.report_completed))
         setStatusMessage('Fetal echo report saved.')
 
         if (!savedScanId) {
           const query = new URLSearchParams()
           query.set('patientId', selectedPatientId)
           if (selectedVisitId) query.set('visitId', selectedVisitId)
-          navigate(`/fetal-echo-report/${nextScanId}?${query.toString()}`, { replace: true })
+          setSavedReportPath(`/fetal-echo-report/${nextScanId}?${query.toString()}`)
         }
+        return true
       }
+      setStatusMessage('Not saved. The server did not confirm the save.')
     } catch (error) {
       console.error('Error saving fetal echo report:', error)
-      setStatusMessage('Could not save fetal echo report.')
+      setStatusMessage(reportSaveError(error))
     } finally {
       setIsSaving(false)
     }
   }
 
+  const handleDelete = async () => {
+    if (locked) { setStatusMessage('Completed reports are read-only.'); return }
+    if (!savedScanId) { setStatusMessage('No saved report to delete.'); return }
+    if (!window.confirm('Delete this unfinished report? This cannot be undone.')) return
+    try { await scanService.deleteScan(savedScanId); navigate('/visits?patient=' + selectedPatientId) }
+    catch (error) { setStatusMessage(error.response?.data?.detail || 'The report was not deleted.') }
+  }
   const handleClear = () => {
-    setReport(deepClone(initialReport))
+    if (locked) { setStatusMessage('Completed reports are read-only.'); return }
+    setReport(initializeDerived(blankReport(initialReport), 'Fetal Echo'))
     setStatusMessage('')
+  }
+  const steps = ['lmp', ...scanTabs.map(tab => tab.id), 'impression']
+  const step = steps.indexOf(activeScanTab)
+  const changeStep = index => { if (steps[index]) setActiveScanTab(steps[index]) }
+  const saveAndNext = async () => {
+    const errors = reportErrors(report, true, false, true)
+    if (errors.length) {
+      setProgressValidationAttempted(true)
+      setActiveScanTab('lmp')
+      setStatusMessage(errors.join(' '))
+      return
+    }
+    if(await handleSave())changeStep(step+1)
+  }
+  const openReportSection = id => {
+    const target = steps.indexOf(id)
+    if (target <= step || locked) { setActiveScanTab(id); return }
+    const errors = reportErrors(report, true, false, true)
+    if (errors.length) {
+      setProgressValidationAttempted(true)
+      setActiveScanTab('lmp')
+      setStatusMessage(errors.join(' '))
+      return
+    }
+    navigateSection(() => setActiveScanTab(id), setStatusMessage)
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100 text-sm text-slate-900">
-      <div className="flex min-h-full flex-col gap-3">
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">Fetal Echo Report</p>
-              <h2 className="text-xl font-semibold tracking-normal text-slate-950">
-                {getPatientName(selectedPatient) || 'Select patient'}
-                {selectedVisitId ? <span className="ml-2 text-sm font-medium text-slate-500">Visit #{selectedVisitId}</span> : null}
-              </h2>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <ToolbarButton icon={Save} label={isSaving ? 'Saving' : 'Save'} onClick={handleSave} />
-              <ToolbarButton icon={Trash2} label="Delete" />
-              <ToolbarButton icon={RotateCcw} label="Clear" onClick={handleClear} />
-              <ToolbarButton icon={Printer} label="Preview" onClick={() => window.print()} />
-              <ToolbarButton icon={FileImage} label="Images" onClick={() => setActiveImageTab('images')} />
-              <ToolbarButton icon={X} label="Close" onClick={() => navigate('/search')} />
-            </div>
-          </div>
-
-          <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_minmax(240px,1fr)_minmax(180px,0.55fr)_auto]">
-            <label className="field-label">
-              Patient
-              <select
-                value={selectedPatientId}
-                onChange={(event) => setSelectedPatientId(event.target.value)}
-                className="field-control"
-              >
-                <option value="">Select patient</option>
-                {patients.map((patient) => (
-                  <option key={patient.id} value={patient.id}>
-                    {patient.patient_id} - {getPatientName(patient)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <HeaderField
-              label="Indication(s)"
-              value={report.indication}
-              onChange={(value) => updateReport(['indication'], value)}
-            />
-            <HeaderField
-              label="Tag"
-              value={report.tag}
-              onChange={(value) => updateReport(['tag'], value)}
-            />
-            <label className="flex items-end gap-2 pb-2 text-sm font-medium text-slate-700">
-              <input
-                type="checkbox"
-                checked={report.add_new_tag}
-                onChange={(event) => updateReport(['add_new_tag'], event.target.checked)}
-                className="h-5 w-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-              />
-              Add New
-            </label>
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" className="legacy-small-button">Open existing scans</button>
-              <button type="button" className="legacy-small-button">Ref. Letter</button>
-              <button type="button" onClick={() => setIsLmpOpen(true)} className="legacy-small-button">LMP</button>
-              <InlineField label="No. of fetuses" value={report.no_of_fetuses} onChange={(value) => updateReport(['no_of_fetuses'], value)} width="w-20" />
-              <InlineField label="GA" value={report.ga_weeks} onChange={(value) => updateReport(['ga_weeks'], value)} width="w-20" suffix="wks" />
-              <InlineField value={report.ga_days} onChange={(value) => updateReport(['ga_days'], value)} width="w-20" suffix="days" />
-            </div>
-
-            {statusMessage && <span className="font-semibold text-blue-800">{statusMessage}</span>}
-          </div>
-
-          <div className="mt-4 rounded-xl border border-teal-100 bg-teal-50/50 p-3">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-teal-700">Options to print</div>
-            <div className="flex flex-wrap gap-3">
-              {Object.entries({
-                biometry: 'Biometry',
-                doppler: 'Doppler',
-                percentile_bar: 'Percentile bar',
-                ga: 'GA',
-                biometry_table_name: 'Biometry table name',
-                echo_details_custom_report: 'Echo details custom report',
-                asp: 'ASP',
-              }).map(([key, label]) => (
-                <label key={key} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm">
-                  <input
-                    type="checkbox"
-                    checked={report.print_options[key]}
-                    onChange={(event) => updateReport(['print_options', key], event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
-          <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 px-3 pt-3">
-              {mainTabs.map((tab) => (
-                <TabButton
-                  key={tab.id}
-                  active={activeMainTab === tab.id}
-                  onClick={() => setActiveMainTab(tab.id)}
-                >
-                  {tab.label}
-                </TabButton>
-              ))}
-            </div>
-
-            <div className="min-h-0 overflow-auto p-4">
-              {activeMainTab === 'scan' ? (
-                <ScanPanel
-                  activeScanTab={activeScanTab}
-                  setActiveScanTab={setActiveScanTab}
-                  report={report}
-                  updateReport={updateReport}
-                />
-              ) : (
-                <ImpressionPanel report={report} updateReport={updateReport} />
-              )}
-            </div>
-          </section>
-
-          <ImagePanel
-            activeImageTab={activeImageTab}
-            setActiveImageTab={setActiveImageTab}
-            report={report}
-            updateReport={updateReport}
-          />
+    <>
+      {completionDialog}{navigationDialog}
+      <div data-locked={locked ? 'true' : 'false'} className="no-print report-editor-form min-h-0 flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100 text-sm text-slate-900">
+      <div className="flex min-h-full flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+          <div><h2 className="text-xl font-semibold">Fetal Echo reporting</h2><p className="text-sm text-slate-500">Patient-linked measurements, images, impression, referral letter and report output.</p></div>
+          <div className="flex gap-2"><span className="field-control">Fetal Echo</span><button type="button" onClick={handleSave} disabled={locked || isSaving} className="primary-button"><Save className="h-4 w-4" />{isSaving ? 'Saving…' : 'Save report'}</button></div>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setIsExistingScansOpen(true)} className="secondary-button"><FolderOpen className="h-4 w-4" />Open existing scans</button>
+          <button type="button" onClick={() => setIsReferralLetterOpen(true)} className="secondary-button"><FileText className="h-4 w-4" />Ref. Letter</button>
+          <button type="button" onClick={() => { setActiveImageTab('images'); setIsImagesModalOpen(true) }} className="secondary-button"><FileImage className="h-4 w-4" />Images</button>
+          <button type="button" disabled={locked} onClick={scatterNormalComments} className="secondary-button">Fill normal scan</button>
+        </div>
+        <section className="rounded-xl border border-slate-200 p-4">
+          <h3 className="mb-4 border-b pb-3 font-semibold">Patient and visit</h3>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="field-label"><span>Patient</span><SearchableSelect options={patients.map(p => ({value:p.id,label:`${p.patient_id || ''} — ${getPatientName(p)}`}))} value={selectedPatientId} disabled={Boolean(scanId || savedScanId || selectedVisitId) || isSaving} onChange={setSelectedPatientId} placeholder="Select patient" searchPlaceholder="Search patient ID or name..." /></div>
+            <label className="field-label">Visit<select className="field-control" value={selectedVisitId} disabled={Boolean(scanId || savedScanId) || isSaving} onChange={e=>setSelectedVisitId(e.target.value)}><option value="">Select visit</option>{visits.map(v=><option key={v.id} value={v.id}>{v.visit_date ? new Date(v.visit_date).toLocaleString() : `Visit ${v.id}`}</option>)}</select></label>
+            <label className="field-label">Report title<input className="field-control" readOnly value="Fetal Echocardiography" /></label>
+            <HeaderField label="Indication" value={report.indication} onChange={value=>updateReport(['indication'],value)} className={progressValidationAttempted && !String(report.indication || '').trim() ? '[&_input]:border-red-500 [&_input]:ring-1 [&_input]:ring-red-300' : ''} />
+          </div>
+        </section>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <label className="field-label">Investigation status<select className="field-control" data-role-locked={currentUser().role !== 'L3' ? 'true' : undefined} disabled={locked || currentUser().role !== 'L3'} value={report.impression.report_completed ? 'completed' : 'in-progress'} onChange={e=>updateReport(['impression','report_completed'],e.target.value==='completed')}><option value="in-progress">In progress</option><option value="completed">Completed</option></select></label>
+        </div>
+        <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Fetal report sections">
+          {[{id:'lmp',label:'LMP details'},...scanTabs,{id:'impression',label:'Impression'},{id:'multiframes',label:'Multiframes'},{id:'preview',label:'Preview'}].map(tab => <TabButton key={tab.id} active={activeScanTab===tab.id} onClick={()=>{if(tab.id==='preview'){setIsReportPreviewOpen(true);return} if(tab.id==='multiframes'){setActiveImageTab('videos');setIsImagesModalOpen(true);return} openReportSection(tab.id)}}>{tab.label}</TabButton>)}
+        </div>
+        <ClinicalComments.Provider value={{report, updateReport}}>
+        <section className="min-w-0 flex-1 rounded-xl border border-slate-200 p-4">
+          {activeScanTab==='lmp' && <PregnancyDating report={report} updateReport={updateReport} onLmpDateChange={handleLmpDateChange} validationAttempted={progressValidationAttempted} />}
+          {activeScanTab==='echo-details' && <EchoDetailsTab report={report} updateReport={updateReport} onToggleNormalComments={toggleNormalComments} isNormalCommentsPopulated={isNormalCommentsPopulated} />}
+          {activeScanTab==='aortic' && <AorticTab report={report} updateReport={updateReport} />}
+          {activeScanTab==='biometry' && <BiometryTab report={report} updateReport={updateReport} />}
+          {activeScanTab==='doppler' && <DopplerTab report={report} updateReport={updateReport} />}
+          {activeScanTab==='impression' && <ImpressionPanel report={report} updateReport={updateReport} scanId={savedScanId || scanId} locked={locked} />}
+        </section></ClinicalComments.Provider>
       </div>
 
-      {isLmpOpen && (
-        <LmpModal
-          report={report}
-          updateReport={updateReport}
-          onLmpDateChange={handleLmpDateChange}
-          onClose={() => setIsLmpOpen(false)}
-          onSave={() => {
-            setIsLmpOpen(false)
-            setStatusMessage('LMP details updated.')
-          }}
-        />
-      )}
+      <ImagesModal
+        open={isImagesModalOpen}
+        initialTab={activeImageTab}
+        visitId={selectedVisitId}
+        onClose={() => setIsImagesModalOpen(false)}
+        patient={selectedPatient}
+      />
+      <ExistingScansModal
+        isOpen={isExistingScansOpen}
+        onClose={() => setIsExistingScansOpen(false)}
+        patientId={selectedPatientId}
+        patient={selectedPatient}
+        currentScanId={savedScanId || scanId}
+      />
+      <ReferralLetterModal
+        isOpen={isReferralLetterOpen}
+        onClose={() => setIsReferralLetterOpen(false)}
+        patient={selectedPatient}
+        scanType="Fetal Echo"
+        report={report}
+        scanId={savedScanId || scanId}
+      />
+      <ClinicalFooter onSave={handleSave} saving={isSaving} locked={locked} message={locked ? 'Completed report — read-only.' : statusMessage} patientId={selectedPatientId} onBack={()=>changeStep(step-1)} onNext={step<steps.length-1 ? saveAndNext : undefined} />
     </div>
+    {isReportPreviewOpen && (
+      <ClinicalPreview title="Fetal Echocardiography"         report={report}
+        patient={selectedPatient}
+        status={dirty ? 'Unsaved changes' : locked ? 'Completed' : 'Draft / In Progress'}
+        visitId={selectedVisitId}
+        onClose={() => setIsReportPreviewOpen(false)}
+      />
+    )}
+
+    </>
   )
 }
 
-function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 px-2 pt-2">
-        <TabButton active>Fetus</TabButton>
-      </div>
-      <div className="flex flex-wrap gap-1 border-b border-slate-200">
-        {scanTabs.map((tab) => (
-          <TabButton
-            key={tab.id}
-            active={activeScanTab === tab.id}
-            onClick={() => setActiveScanTab(tab.id)}
-          >
-            {tab.label}
-          </TabButton>
-        ))}
-      </div>
-      {activeScanTab === 'echo-details' && <EchoDetailsTab report={report} updateReport={updateReport} />}
-      {activeScanTab === 'biometry' && <BiometryTab report={report} updateReport={updateReport} />}
-      {activeScanTab === 'doppler' && <DopplerTab report={report} updateReport={updateReport} />}
-      {activeScanTab === 'aortic' && <AorticTab report={report} updateReport={updateReport} />}
+function PregnancyDating({ report, updateReport, onLmpDateChange, validationAttempted }) {
+  const missingDate = validationAttempted && ![report.lmp.lmp_date, report.lmp.edd, report.lmp.et_date].some(Boolean)
+  const missingCount = validationAttempted && !/^[1-9]\d*$/.test(String(report.no_of_fetuses || ''))
+  return <div>
+    <h3 className="mb-1 border-b pb-3 font-semibold">Pregnancy dating <span aria-hidden="true" className="text-red-600">*</span></h3><p className="mb-3 text-xs text-slate-600">Enter at least one: LMP, EDD, or embryo transfer date.</p>
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <label className="field-label">LMP<input type="date" max={new Date().toISOString().slice(0,10)} aria-invalid={missingDate} className={`field-control ${missingDate ? 'border-red-500 ring-1 ring-red-300' : ''}`} value={report.lmp.lmp_date || ''} onChange={e=>onLmpDateChange(e.target.value)} /></label>
+      <label className="field-label">EDD<input type="date" aria-invalid={missingDate} className={`field-control ${missingDate ? 'border-red-500 ring-1 ring-red-300' : ''}`} value={report.lmp.edd || ''} onChange={e=>updateReport(['lmp','edd'],e.target.value)} /></label>
+      <label className="field-label">Gestational age – weeks<input type="number" min="0" max="45" step="1" className="field-control" value={report.ga_weeks || ''} onChange={e=>updateReport(['ga_weeks'],e.target.value)} /></label>
+      <label className="field-label">Days<input type="number" min="0" max="6" step="1" className="field-control" value={report.ga_days || ''} onChange={e=>updateReport(['ga_days'],e.target.value)} /></label>
+      <div className="field-label"><span>Dating method</span><AddableSelect field="fetal_dating_method" value={report.lmp.assigned_by} options={['lmp','user']} onChange={value=>updateReport(['lmp','assigned_by'],value)} /></div>
+      <label className="field-label">Embryo transfer date<input type="date" max={new Date().toISOString().slice(0,10)} aria-invalid={missingDate} className={`field-control ${missingDate ? 'border-red-500 ring-1 ring-red-300' : ''}`} value={typeof report.lmp.et_date === 'string' ? report.lmp.et_date : ''} onChange={e=>updateReport(['lmp','et_date'],e.target.value)} /></label>
+      <label className="field-label">Blastocyst transfer date<input type="date" className="field-control" value={report.lmp.blastocyst_transfer_date || ''} onChange={e=>updateReport(['lmp','blastocyst_transfer_date'],e.target.value)} /></label>
+      <div className="field-label"><span className={missingCount ? 'text-red-700' : ''}>Number of fetuses <span aria-hidden="true" className="text-red-600">*</span></span><AddableSelect field="fetal_count" aria-label="Number of fetuses" className={`field-control ${missingCount ? 'border-red-500 ring-1 ring-red-300' : ''}`} value={String(report.no_of_fetuses || '')} options={['1','2','3']} onChange={value=>updateReport(['no_of_fetuses'],value)} /></div>
     </div>
-  )
+  </div>
 }
 
-function EchoDetailsTab({ report, updateReport }) {
+function EchoDetailsTab({ report, updateReport, onToggleNormalComments, isNormalCommentsPopulated }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
@@ -634,7 +769,9 @@ function EchoDetailsTab({ report, updateReport }) {
             />
             Pericardial Effusion
           </label>
+          <FindingComment label="Pericardial effusion" value={report.echo_details.general.pericardial_effusion_comments} onChange={value=>updateReport(['echo_details','general','pericardial_effusion_comments'],value)} />
           <InlineField label="FHR" value={report.echo_details.general.fhr} onChange={(value) => updateReport(['echo_details', 'general', 'fhr'], value)} width="w-16" />
+          <FindingComment label="FHR" value={report.echo_details.general.fhr_comments} onChange={value=>updateReport(['echo_details','general','fhr_comments'],value)} />
         </Fieldset>
 
         <Fieldset title="4-Chamber details">
@@ -672,8 +809,8 @@ function EchoDetailsTab({ report, updateReport }) {
 
         <Fieldset title="Others">
           <div className="grid gap-3 lg:grid-cols-2">
-            <LegacyField label="Systemic veins" value={report.echo_details.others.systemic_veins} onChange={(value) => updateReport(['echo_details', 'others', 'systemic_veins'], value)} withPlus />
-            <LegacyField label="Pulmonary veins" value={report.echo_details.others.pulmonary_veins} onChange={(value) => updateReport(['echo_details', 'others', 'pulmonary_veins'], value)} withPlus />
+            <LegacyField label="Systemic veins" value={report.echo_details.others.systemic_veins} onChange={(value) => updateReport(['echo_details', 'others', 'systemic_veins'], value)} comment={report.echo_details.others.systemic_veins_comments} onComment={value => updateReport(['echo_details','others','systemic_veins_comments'],value)} withPlus />
+            <LegacyField label="Pulmonary veins" value={report.echo_details.others.pulmonary_veins} onChange={(value) => updateReport(['echo_details', 'others', 'pulmonary_veins'], value)} comment={report.echo_details.others.pulmonary_veins_comments} onComment={value => updateReport(['echo_details','others','pulmonary_veins_comments'],value)} withPlus />
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-center">
             <label className="flex items-center gap-2">
@@ -684,12 +821,19 @@ function EchoDetailsTab({ report, updateReport }) {
               />
               Echogenic focus
             </label>
-            <LegacyField label="Other lesions" value={report.echo_details.others.other_lesions} onChange={(value) => updateReport(['echo_details', 'others', 'other_lesions'], value)} withPlus />
+            <LegacyField label="Other lesions" value={report.echo_details.others.other_lesions} onChange={(value) => updateReport(['echo_details', 'others', 'other_lesions'], value)} comment={report.echo_details.others.other_lesions_comments} onComment={value => updateReport(['echo_details','others','other_lesions_comments'],value)} withPlus />
+            <FindingComment label="Echogenic focus" value={report.echo_details.others.echogenic_focus_comments} onChange={value=>updateReport(['echo_details','others','echogenic_focus_comments'],value)} />
           </div>
         </Fieldset>
       </div>
       <aside className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <button type="button" className="legacy-small-button mb-4">Scatter normal comments</button>
+        <button
+          type="button"
+          onClick={onToggleNormalComments}
+          className="legacy-small-button mb-4"
+        >
+          {isNormalCommentsPopulated ? 'Clear all comments' : 'Scatter normal comments'}
+        </button>
         <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
           <input
             type="checkbox"
@@ -812,12 +956,7 @@ function DopplerTab({ report, updateReport }) {
           {['vm', 'tamx', 'systolic_peak', 'diastolic_peak', 'a_wave'].map((suffix) => {
             const key = `${prefix}_${suffix}`
             return (
-              <input
-                key={key}
-                className="legacy-input w-full"
-                value={report.doppler.venous[key]}
-                onChange={(event) => updateReport(['doppler', 'venous', key], event.target.value)}
-              />
+              <div key={key}><input className="legacy-input w-full" value={report.doppler.venous[key]} onChange={(event) => updateReport(['doppler', 'venous', key], event.target.value)} /><ClinicalVariableComment label={`${label} ${suffix.replaceAll('_',' ')}`} /></div>
             )
           })}
         </div>
@@ -837,12 +976,7 @@ function DopplerTab({ report, updateReport }) {
           {['e_wave', 'a_wave', 'e_a'].map((suffix) => {
             const key = `${prefix}_${suffix}`
             return (
-              <input
-                key={key}
-                className="legacy-input w-full"
-                value={report.doppler.valves[key]}
-                onChange={(event) => updateReport(['doppler', 'valves', key], event.target.value)}
-              />
+              <div key={key}><input className="legacy-input w-full" readOnly={key.endsWith('_e_a')} value={report.doppler.valves[key]} onChange={(event) => updateReport(['doppler', 'valves', key], event.target.value)} /><ClinicalVariableComment label={`${label} ${suffix.replaceAll('_',' ')}`} /></div>
             )
           })}
         </div>
@@ -908,168 +1042,34 @@ function AorticTab({ report, updateReport }) {
   )
 }
 
-function ImpressionPanel({ report, updateReport }) {
+function ImpressionPanel({ report, updateReport, scanId, locked }) {
   const impression = report.impression
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="min-w-0 space-y-3">
-        <TextInput label="Report title" value={impression.report_title} onChange={(value) => updateReport(['impression', 'report_title'], value)} />
+      <div className="min-w-0 space-y-3"><ApprovalControls report={report} updateReport={updateReport} scanId={scanId} locked={locked} />
+        <label className="field-label">Report title<input className="field-control" readOnly value="Fetal Echocardiography" /></label>
         <TextInput label="First line of report" value={impression.first_line} onChange={(value) => updateReport(['impression', 'first_line'], value)} />
         <TextArea label="Header comments - (F11 - Show previous header comments)" value={impression.header_comments} onChange={(value) => updateReport(['impression', 'header_comments'], value)} rows={3} />
         <TextArea label="Footer comments - (F11 - Show previous footer comments)" value={impression.footer_comments} onChange={(value) => updateReport(['impression', 'footer_comments'], value)} rows={3} />
-        <div className="flex flex-wrap items-center gap-5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={impression.print_system_impression} onChange={(event) => updateReport(['impression', 'print_system_impression'], event.target.checked)} />
-            Print System impression
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="radio" checked={impression.system_impression_position === 'before'} onChange={() => updateReport(['impression', 'system_impression_position'], 'before')} />
-            Before final impression
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="radio" checked={impression.system_impression_position === 'after'} onChange={() => updateReport(['impression', 'system_impression_position'], 'after')} />
-            After final impression
-          </label>
-        </div>
-        <TextArea label="System impression - (F11 - Show previous system comments)" value={impression.system_impression} onChange={(value) => updateReport(['impression', 'system_impression'], value)} rows={5} />
         <div className="flex items-center justify-between">
           <span>Final impression-(F11-Show previous)</span>
-          <label className="mr-16 flex items-center gap-2 font-semibold text-green-700">
-            <input type="checkbox" checked={impression.report_completed} onChange={(event) => updateReport(['impression', 'report_completed'], event.target.checked)} />
-            Report completed
-          </label>
+
         </div>
-        <textarea className="h-32 w-full resize-y rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100" value={impression.final_impression} onChange={(event) => updateReport(['impression', 'final_impression'], event.target.value)} />
+        <textarea aria-label="Final impression" className="h-32 w-full resize-y rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100" value={impression.final_impression} onChange={(event) => updateReport(['impression', 'final_impression'], event.target.value)} />
         <TextArea label="Disclaimer comments - (F11 - Show previous disclaimer comments)" value={impression.disclaimer_comments} onChange={(value) => updateReport(['impression', 'disclaimer_comments'], value)} rows={3} />
         <TextArea label="Internal Comments (Will not be printed) - (F11 - Show previous internal comments)" value={impression.internal_comments} onChange={(value) => updateReport(['impression', 'internal_comments'], value)} rows={3} />
       </div>
 
       <aside className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <ComboWithNew label="Report signed by (L)" value={impression.report_signed_by_l} onChange={(value) => updateReport(['impression', 'report_signed_by_l'], value)} />
-        <ComboWithNew label="Report signed by (R)" value={impression.report_signed_by_r} onChange={(value) => updateReport(['impression', 'report_signed_by_r'], value)} />
-        <Fieldset title="Investigation status">
-          {[
-            ['Abnormal', 'abnormal'],
-            ['Ambiguity', 'ambiguity'],
-            ['Growth Abnormality', 'growth_abnormality'],
-          ].map(([label, key]) => (
-            <label key={key} className="block">
-              <input type="checkbox" checked={impression.investigation_status[key]} onChange={(event) => updateReport(['impression', 'investigation_status', key], event.target.checked)} /> {label}
-            </label>
-          ))}
-        </Fieldset>
+        <label className="field-label">Report type<select className="field-control" value={impression.classification || ''} onChange={e => updateReport(['impression','classification'], e.target.value)}><option value="">Select report type</option>{['Normal','Abnormal','Ambiguous'].map(v => <option key={v}>{v}</option>)}</select></label>
         <TextInput label="Primary consultant" value={impression.primary_consultant} onChange={(value) => updateReport(['impression', 'primary_consultant'], value)} />
-        <TextArea label="Second consultant" value={impression.second_consultant} onChange={(value) => updateReport(['impression', 'second_consultant'], value)} rows={3} />
-        <TextArea label="Audited by" value={impression.audited_by} onChange={(value) => updateReport(['impression', 'audited_by'], value)} rows={3} />
+        <TextArea label="Secondary consultant" value={impression.second_consultant} onChange={(value) => updateReport(['impression', 'second_consultant'], value)} rows={3} />
+        <label className="field-label">Audited by<input className="field-control" readOnly value={impression.audited_by || ''} /></label>
         <TextArea label="Reviewed by" value={impression.reviewed_by} onChange={(value) => updateReport(['impression', 'reviewed_by'], value)} rows={3} />
-        <TextArea label="Report typed by" value={impression.report_typed_by} onChange={(value) => updateReport(['impression', 'report_typed_by'], value)} rows={3} />
+        <label className="field-label">Report typed by<input className="field-control" readOnly value={impression.report_typed_by || ''} /></label>
         <TextArea label="Equipment" value={impression.equipment} onChange={(value) => updateReport(['impression', 'equipment'], value)} rows={6} />
       </aside>
-    </div>
-  )
-}
-
-function ImagePanel({ activeImageTab, setActiveImageTab, report, updateReport }) {
-  return (
-    <aside className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 px-3 pt-3">
-        {imageTabs.map((tab) => (
-          <TabButton key={tab.id} active={activeImageTab === tab.id} onClick={() => setActiveImageTab(tab.id)}>
-            {tab.label}
-          </TabButton>
-        ))}
-      </div>
-      <div className="space-y-4 p-4">
-        <div className="grid grid-cols-2 gap-2">
-          {['Import', 'Export', 'Delete', 'Print', 'Rule of three', 'Image title', 'Process', 'Ink Save', 'Refresh', 'Organ drawing'].map((label) => (
-            <button key={label} type="button" className="legacy-small-button">{label}</button>
-          ))}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-          <label className="field-label">
-            Image layout
-            <select className="field-control" value={report.images.columns} onChange={(event) => updateReport(['images', 'columns'], event.target.value)}>
-              <option value="1">Images: 1 column</option>
-              <option value="2">Images: 2 column</option>
-              <option value="3">Images: 3 column</option>
-            </select>
-          </label>
-          <label className="field-label">
-            Rows X Cols
-            <select className="field-control" value={report.images.rows_cols} onChange={(event) => updateReport(['images', 'rows_cols'], event.target.value)}>
-              <option>4X2</option>
-              <option>3X2</option>
-              <option>2X2</option>
-            </select>
-          </label>
-          <InlineField label="Width" value={report.images.width} onChange={(value) => updateReport(['images', 'width'], value)} width="w-full" />
-          <InlineField label="Height" value={report.images.height} onChange={(value) => updateReport(['images', 'height'], value)} width="w-full" />
-        </div>
-        <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-400">
-          <div className="text-center text-sm font-medium">
-            <Image className="mx-auto mb-2 h-12 w-12" />
-            {activeImageTab === 'images' ? 'No images imported' : 'No multiframes imported'}
-          </div>
-        </div>
-      </div>
-    </aside>
-  )
-}
-
-function LmpModal({ report, updateReport, onLmpDateChange, onClose, onSave }) {
-  const ga = calculateGestationalAge(report.lmp.lmp_date)
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
-      <div className="w-full max-w-3xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">
-          <span className="text-lg text-slate-950">LMP details</span>
-          <button type="button" onClick={onClose} className="toolbar-button px-3">
-            <X className="h-4 w-4" />
-            Close
-          </button>
-        </div>
-        <div className="space-y-5 p-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-            <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
-              <input type="checkbox" checked={report.lmp.enabled} onChange={(event) => updateReport(['lmp', 'enabled'], event.target.checked)} />
-              LMP Date
-            </label>
-            <label className="field-label">
-              LMP Date
-              <input type="date" className="field-control" value={report.lmp.lmp_date} onChange={(event) => onLmpDateChange(event.target.value)} />
-            </label>
-            <label className="field-label">
-              EDD
-              <input type="date" className="field-control" value={report.lmp.edd} onChange={(event) => updateReport(['lmp', 'edd'], event.target.value)} />
-            </label>
-            <span className="rounded-lg bg-blue-50 px-3 py-2 font-semibold italic text-blue-800 lg:col-span-3">LMP GA: {ga || '0 W 0 D'}</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <label><input type="checkbox" checked={report.lmp.assigned_by === 'user'} onChange={(event) => updateReport(['lmp', 'assigned_by'], event.target.checked ? 'user' : 'lmp')} /> By user</label>
-            <label><input type="radio" checked={report.lmp.et_date} onChange={(event) => updateReport(['lmp', 'et_date'], event.target.checked)} /> ET Date</label>
-            <label><input type="radio" checked={report.lmp.bt_date} onChange={(event) => updateReport(['lmp', 'bt_date'], event.target.checked)} /> BT Date</label>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-[1fr_180px] sm:items-end">
-            <span className="rounded-lg bg-teal-50 px-3 py-3 text-center font-semibold italic text-teal-800">Assigned by LMP</span>
-            <label className="field-label">
-              No. of Fetus
-              <select className="field-control" value={report.lmp.no_of_fetuses} onChange={(event) => updateReport(['lmp', 'no_of_fetuses'], event.target.value)}>
-              <option>Single</option>
-              <option>Twin</option>
-              <option>Triplet</option>
-              </select>
-            </label>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
-            <button type="button" onClick={() => updateReport(['lmp'], deepClone(initialReport.lmp))} className="legacy-action-button">Delete</button>
-            <button type="button" onClick={onClose} className="legacy-action-button">Close</button>
-            <button type="button" onClick={onSave} className="primary-button">Save</button>
-          </div>
-          <p className="text-center text-sm font-semibold text-slate-600">Delete button will erase current scan information alone</p>
-        </div>
-      </div>
     </div>
   )
 }
@@ -1084,21 +1084,24 @@ function ToolbarButton({ icon: Icon, label, onClick }) {
 }
 
 function HeaderField({ label, value, onChange, className = '' }) {
+  const listId = label === 'Indication' ? 'common-fetal-indications' : undefined
   return (
     <label className={`field-label ${className}`}>
-      {label}
-      <input className="field-control" value={value} onChange={(event) => onChange(event.target.value)} />
+      {label}{label === 'Indication' && <span aria-hidden="true" className="text-red-600"> *</span>}
+      <input className="field-control" list={listId} value={value} onChange={(event) => onChange(event.target.value)} />
+      {listId && <datalist id={listId}>{['Routine fetal cardiac assessment','Suspected congenital heart disease','Abnormal obstetric ultrasound','Family history of congenital heart disease','Maternal diabetes','Maternal medication exposure','Arrhythmia'].map(item => <option key={item} value={item} />)}</datalist>}
     </label>
   )
 }
 
 function InlineField({ label = '', value, onChange, width = 'w-12', suffix = '' }) {
   return (
-    <label className="flex min-w-0 items-center gap-2 text-sm font-medium text-slate-700">
+    <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium text-slate-700">
       {label && <span className="shrink-0">{label}</span>}
       <input className={`legacy-input ${width}`} value={value} onChange={(event) => onChange(event.target.value)} />
       {suffix && <span className="shrink-0 text-slate-500">{suffix}</span>}
-    </label>
+      <ClinicalVariableComment label={label} />
+    </div>
   )
 }
 
@@ -1127,15 +1130,56 @@ function Fieldset({ title = '', className = '', children }) {
   )
 }
 
-function LegacyField({ label, value, onChange, withPlus = false }) {
+const fetalFieldOptions = {
+  'Cardiac views': ['Normal (Situs)', 'Situs Inversus', 'Situs Ambiguus', 'Not Visualised'],
+  'Abdominal situs': ['Normal', 'Inversus', 'Ambiguus', 'Left Sided', 'Right Sided'],
+  'Stomach': ['Left Sided', 'Right Sided', 'Absent', 'Normal'],
+  'Heart size': ['Normal', 'Enlarged', 'Small'],
+  'Apex': ['Normal', 'Left Sided', 'Right Sided', 'Midline'],
+  'Cardiac axis': ['Normal', 'Deviated Left', 'Deviated Right'],
+  'Rhythm': ['Normal', 'Bradycardia', 'Tachycardia', 'Ectopic beats', 'Irregular'],
+  'Atria': ['Normal', 'Dilated Right Atrium', 'Dilated Left Atrium', 'Single Atrium'],
+  'Ventricles': ['Normal', 'Hypoplastic Left Ventricle', 'Hypoplastic Right Ventricle', 'Dilated'],
+  'Atrioventricular junction': ['Concordant, normal', 'Discordant', 'Single Inlet', 'Double Inlet'],
+  'Atrioventricular regurgitation': ['None', 'Tricuspid Regurgitation', 'Mitral Regurgitation', 'Mild', 'Moderate', 'Severe'],
+  'Inter ventricular septum': ['Intact (well seen)', 'VSD (Perimembranous)', 'VSD (Muscular)', 'VSD (Inlet)', 'VSD (Outlet)'],
+  'Ventricular function': ['Normal', 'Depressed LV Function', 'Depressed RV Function', 'Biventricular Dysfunction'],
+  'Inter atrial septum': ['Normal (Foramen Oval Flap Seen)', 'ASD (Secundum)', 'ASD (Primum)', 'Intact'],
+  'Foramen ovale': ['Normal flow (Right to Left)', 'Restricted Flow', 'Reversed Flow (Left to Right)'],
+  'Outflow tracts': ['Normal', 'Transposition of Great Arteries', 'Tetralogy of Fallot', 'Truncus Arteriosus', 'Double Outlet RV'],
+  'V-A valve regurgitation': ['None', 'Aortic Regurgitation', 'Pulmonary Regurgitation', 'Mild', 'Moderate', 'Severe'],
+  'Branch pulmonary artery': ['Confluent, good size', 'Hypoplastic RPA', 'Hypoplastic LPA', 'Stenotic'],
+  'Ductus arteriosus': ['Normal in size and direction', 'Constricted', 'Absent', 'Reversed Flow'],
+  'Aortic arch': ['Normal', 'Coarctation', 'Hypoplastic Arch', 'Interrupted Arch'],
+  'Side of arch': ['Normal, left of trachea', 'Right Arch', 'Double Arch'],
+  '3VV': ['Normal', 'Abnormal Vessel Size', 'Abnormal Alignment'],
+  '3VT view': ['Normal', 'V-Sign Normal', 'U-Sign / Right Arch', 'Single Vessel'],
+  'Systemic veins': ['Normal', 'Persistent Left SVC', 'Interrupted IVC with Azygos Continuation'],
+  'Pulmonary veins': ['Normal', 'TAPVC', 'PAPVC', 'Partial Anomalous'],
+}
+
+function ClinicalVariableComment({ label }) {
+  const context = useContext(ClinicalComments)
+  const key = String(label || 'Clinical field').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  const value = context?.report?.clinical_comments?.[key] || ''
+  if (!context) return null
+  return <details className="col-span-full mt-1"><summary className="cursor-pointer text-xs font-medium text-teal-700">{value ? 'Edit comment' : 'Add comment'}</summary><textarea aria-label={`${label} additional comment`} className="field-control mt-1 min-h-16" value={value} onChange={event => context.updateReport(['clinical_comments', key], event.target.value)} /></details>
+}
+
+function FindingComment({ label, value, onChange, required = false }) {
+  const [showComment, setShowComment] = useState(false)
+  return <div><button type="button" className="text-xs font-medium text-teal-700 underline" onClick={() => setShowComment(open => !open)}>{showComment || value || required ? 'Comment' : 'Add comment'}</button>{(showComment || value || required) && <textarea aria-label={`${label} comment`} aria-required={required} className={`field-control mt-1 h-16 py-2 ${required && !String(value || '').trim() ? 'border-red-500' : ''}`} value={value || ''} onChange={event => onChange(event.target.value)} />}</div>
+}
+
+function LegacyField({ label, value, onChange, withPlus = false, comment, onComment }) {
+  const field = `fetal_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+  const needsComment = String(value || '').trim().toLowerCase() === 'abnormal'
   return (
-    <label className="grid min-w-0 gap-1 sm:grid-cols-[minmax(130px,0.8fr)_minmax(0,1fr)] sm:items-center">
+    <div className="grid min-w-0 gap-1 sm:grid-cols-[minmax(140px,0.85fr)_minmax(0,1fr)] sm:items-center">
       <span className="text-sm font-medium text-slate-700">{label}</span>
-      <span className="flex min-w-0 gap-2">
-        <input className="legacy-input w-full" value={value || ''} onChange={(event) => onChange(event.target.value)} />
-        {withPlus && <button type="button" className="legacy-plus-button">+</button>}
-      </span>
-    </label>
+      <EditableOptions field={field} label={label} value={value} onChange={onChange} options={fetalFieldOptions[label] || ['Normal', 'Abnormal', 'Not Visualised']} withPlus={withPlus} />
+      {onComment ? <div className="sm:col-span-2"><FindingComment label={label} value={comment} onChange={onComment} required={needsComment} /></div> : <div className="sm:col-span-2"><ClinicalVariableComment label={label} /></div>}
+    </div>
   )
 }
 
@@ -1144,8 +1188,8 @@ function TwoColumnLegacyGrid({ rows, report, updateReport, withPlus = false }) {
     <div className="grid gap-3 lg:grid-cols-2">
       {rows.map(([leftLabel, leftPath, rightLabel, rightPath]) => (
         <div key={leftLabel} className="contents">
-          <LegacyField label={leftLabel} value={getByPath(report, leftPath)} onChange={(value) => updateReport(leftPath, value)} withPlus={withPlus} />
-          {rightLabel && <LegacyField label={rightLabel} value={getByPath(report, rightPath)} onChange={(value) => updateReport(rightPath, value)} withPlus={withPlus} />}
+          <LegacyField label={leftLabel} value={getByPath(report, leftPath)} onChange={(value) => updateReport(leftPath, value)} comment={getByPath(report, [...leftPath.slice(0,-1), `${leftPath.at(-1)}_comments`])} onComment={value => updateReport([...leftPath.slice(0,-1), `${leftPath.at(-1)}_comments`], value)} withPlus={withPlus} />
+          {rightLabel && <LegacyField label={rightLabel} value={getByPath(report, rightPath)} onChange={(value) => updateReport(rightPath, value)} comment={getByPath(report, [...rightPath.slice(0,-1), `${rightPath.at(-1)}_comments`])} onComment={value => updateReport([...rightPath.slice(0,-1), `${rightPath.at(-1)}_comments`], value)} withPlus={withPlus} />}
         </div>
       ))}
     </div>
@@ -1158,11 +1202,12 @@ function getByPath(source, path) {
 
 function MeasurementRow({ label, value, onChange, suffix = '', compact = false }) {
   return (
-    <label className={`grid min-w-0 items-center gap-2 ${compact ? 'grid-cols-1' : 'sm:grid-cols-[minmax(150px,1fr)_minmax(90px,120px)_auto]'}`}>
+    <div className={`grid min-w-0 items-center gap-2 ${compact ? 'grid-cols-1' : 'sm:grid-cols-[minmax(150px,1fr)_minmax(90px,120px)_auto]'}`}>
       <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input className="legacy-input w-full" value={value || ''} onChange={(event) => onChange(event.target.value)} />
+      <input readOnly={/\bMPI\b|\bPI\b|TDIMPI|E\/A|E\/E/i.test(label)} placeholder={/\bMPI\b|\bPI\b|TDIMPI|E\/A|E\/E/i.test(label) ? 'Awaiting approved formula' : ''} className="legacy-input w-full" value={value || ''} onChange={(event) => onChange(event.target.value)} />
       {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
-    </label>
+      <ClinicalVariableComment label={label} />
+    </div>
   )
 }
 
@@ -1170,10 +1215,12 @@ function ValveMeasurement({ label, value, zValue, onValue, onZ }) {
   return (
     <div className="mb-3 grid min-w-0 gap-2 sm:grid-cols-[minmax(150px,1fr)_minmax(90px,120px)_auto_auto_minmax(90px,120px)] sm:items-center">
       <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input className="legacy-input w-full" value={value || ''} onChange={(event) => onValue(event.target.value)} />
+      <input aria-label={label} className="legacy-input w-full" value={value || ''} onChange={(event) => onValue(event.target.value)} />
       <span className="text-sm text-slate-500">(mm)</span>
       <span className="text-sm font-medium text-slate-700">Z score</span>
-      <input className="legacy-input w-full" value={zValue || ''} onChange={(event) => onZ(event.target.value)} />
+      <input aria-label={`${label} Z score`} className="legacy-input w-full" value={zValue || ''} onChange={(event) => onZ(event.target.value)} />
+      <ClinicalVariableComment label={label} />
+      <ClinicalVariableComment label={`${label} Z score`} />
     </div>
   )
 }
@@ -1190,6 +1237,7 @@ function RadioPair({ label, options, value, onChange }) {
           </label>
         ))}
       </div>
+      <ClinicalVariableComment label={label} />
     </div>
   )
 }
@@ -1209,8 +1257,8 @@ function MpiTable({ title, values, update, method2 = false }) {
         {rows.map(([label, suffix]) => (
           <div key={suffix} className="contents">
             <span>{label}</span>
-            <input className="legacy-input w-full" value={values[`rv_${suffix}`] || ''} onChange={(event) => update(`rv_${suffix}`, event.target.value)} />
-            <input className="legacy-input w-full" value={values[`lv_${suffix}`] || ''} onChange={(event) => update(`lv_${suffix}`, event.target.value)} />
+            <div><input className="legacy-input w-full" readOnly={suffix === 'mpi'} aria-label={'RV '+suffix} placeholder={suffix === 'mpi' ? 'Awaiting approved formula' : ''} value={values[`rv_${suffix}`] || ''} onChange={(event) => update(`rv_${suffix}`, event.target.value)} /><ClinicalVariableComment label={`${title} RV ${label}`} /></div>
+            <div><input className="legacy-input w-full" readOnly={suffix === 'mpi'} aria-label={'LV '+suffix} placeholder={suffix === 'mpi' ? 'Awaiting approved formula' : ''} value={values[`lv_${suffix}`] || ''} onChange={(event) => update(`lv_${suffix}`, event.target.value)} /><ClinicalVariableComment label={`${title} LV ${label}`} /></div>
           </div>
         ))}
       </div>
@@ -1247,5 +1295,6 @@ function ComboWithNew({ label, value, onChange }) {
     </label>
   )
 }
+
 
 export default FetalEchoReport

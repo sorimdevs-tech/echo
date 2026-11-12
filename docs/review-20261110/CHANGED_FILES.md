@@ -1,0 +1,50 @@
+# Changed files
+
+Changes relative to `5b2696e`. Database removals below are removals from Git tracking only; local files were retained.
+
+- `.dockerignore` — Build/test commands or sensitive-data exclusion.
+- `.gitignore` — Build/test commands or sensitive-data exclusion.
+- `LOCAL_BACKLOG_STATUS.md` — Audit, clinical dependencies, remaining backlog or current operating instructions.
+- `README.md` — Audit, clinical dependencies, remaining backlog or current operating instructions.
+- `backend/clinical_workflow.py` — Clinical workflow, persistence/locking, validation or safe upload handling.
+- `backend/db.json` — Stop tracking unverified runtime data; preserve local file.
+- `backend/echo.db` — Stop tracking unverified runtime data; preserve local file.
+- `backend/main.py` — Clinical workflow, persistence/locking, validation or safe upload handling.
+- `backend/session_store.py` — Persistent token digests, session revocation, and login failure rate limiting.
+- `backend/test_clinical_workflow.py` — Isolated regression tests and dummy preview generation.
+- `backend/test_session_store.py` — Session persistence, expiration, and abuse protection tests.
+- `db.json` — Stop tracking unverified runtime data; preserve local file.
+- `docs/review-20261110/CHANGED_FILES.md` — Audit, clinical dependencies, remaining backlog or current operating instructions.
+- `docs/review-20261110/CLINICAL_INPUTS.md` — Audit, clinical dependencies, remaining backlog or current operating instructions.
+- `docs/review-20261110/IMPLEMENTATION_AUDIT.csv` — Audit, clinical dependencies, remaining backlog or current operating instructions.
+- `docs/review-20261110/REVIEW.md` — Audit, clinical dependencies, remaining backlog or current operating instructions.
+- `docs/review-20261110/RUNBOOK.md` — Audit, clinical dependencies, remaining backlog or current operating instructions.
+- `frontend/package.json` — Build/test commands or sensitive-data exclusion.
+- `frontend/src/App.jsx` — Shared validation, safe defaults, preview/print, completion controls or measurement display.
+- `frontend/src/api/workspaceService.js` — Client endpoints for layout persistence and media interactions.
+- `frontend/src/clinical-print.css` — Shared validation, safe defaults, preview/print, completion controls or measurement display.
+- `frontend/src/components/AddableSelect.jsx` — Dropdown with required/accessibility prop forwarding.
+- `frontend/src/components/ClinicalWorkflow.jsx` — Shared validation, safe defaults, preview/print, completion controls or measurement display.
+- `frontend/src/components/ImageCompareModal.jsx` — Image comparison modal with unsaved changes prompt and layout persistence.
+- `frontend/src/components/ImagesModal.jsx` — Shared validation, safe defaults, preview/print, completion controls or measurement display.
+- `frontend/src/components/MediaPrintPreview.jsx` — Clinical image print preview portal with patient context headers.
+- `frontend/src/components/PatientDocumentUpload.jsx` — Shared validation, safe defaults, preview/print, completion controls or measurement display.
+- `frontend/src/components/TiffaTemplateModal.jsx` — Image layout modal with rule presets, unsaved guard, and print preview.
+- `frontend/src/components/UnsavedChangesPrompt.jsx` — In-app dialog guarding navigation away from dirty forms.
+- `frontend/src/measurementData.js` — Shared validation, safe defaults, preview/print, completion controls or measurement display.
+- `frontend/src/pages/AdultEchoReport.jsx` — Report, navigation or media workflow corrections; see REVIEW.md.
+- `frontend/src/pages/Dashboard.jsx` — Dashboard cleanup of fabricated figures.
+- `frontend/src/pages/EchoStudies.jsx` — Echo studies listing and status filter.
+- `frontend/src/pages/EditPatient.jsx` — Edit patient locks, wheel safeguards, and mandatory indicators.
+- `frontend/src/pages/FetalEchoReport.jsx` — Report, navigation or media workflow corrections; see REVIEW.md.
+- `frontend/src/pages/Home.jsx` — Report, navigation or media workflow corrections; see REVIEW.md.
+- `frontend/src/pages/ImagesViewer.jsx` — Report, navigation or media workflow corrections; see REVIEW.md.
+- `frontend/src/pages/Measurements.jsx` — Report, navigation or media workflow corrections; see REVIEW.md.
+- `frontend/src/pages/NewPatient.jsx` — Patient registration required indicators and accessibility.
+- `frontend/src/pages/PediatricEchoReport.jsx` — Report, navigation or media workflow corrections; see REVIEW.md.
+- `frontend/src/pages/Reports.jsx` — Report, navigation or media workflow corrections; see REVIEW.md.
+- `frontend/src/reportValidation.js` — Shared validation, safe defaults, preview/print, completion controls or measurement display.
+- `frontend/src/style.css` — Print stylesheets, input spinner overrides, and required indicators.
+- `frontend/test_clinical_preview.mjs` — Isolated regression tests and dummy preview generation.
+- `frontend/test_report_validation.mjs` — Isolated regression tests and dummy preview generation.
+- `frontend/vite.config.js` — Vite proxy and build configuration.

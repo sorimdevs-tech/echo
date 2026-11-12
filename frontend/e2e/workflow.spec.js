@@ -1,0 +1,55 @@
+import { test, expect } from '@playwright/test'
+import { loadFixture, login, openReport } from './fixture.js'
+
+let info
+test.beforeAll(async () => {
+  info = await loadFixture()
+})
+test.describe.configure({ mode: 'serial' })
+
+test('L1 entry, L2 audit, and L3 completion preserve role restrictions and the lock', async ({ browser }) => {
+  const l1 = await browser.newPage()
+  await login(l1, 'l1', info.password)
+  await openReport(l1, info, 'Fetal Echo')
+  await l1.getByRole('button', { name: 'Impression', exact: true }).click()
+  await expect(l1.getByText('Audit: Pending')).toBeVisible()
+  await expect(l1.getByLabel('Auditing done')).toHaveCount(0)
+  await expect(l1.getByLabel('Report completed')).toHaveCount(0)
+  await l1.getByRole('button', { name: 'Save report' }).last().click()
+  await expect(l1.getByText('Fetal echo report saved.').first()).toBeVisible()
+  await l1.close()
+
+  const l2 = await browser.newPage()
+  await login(l2, 'l2', info.password)
+  await openReport(l2, info, 'Fetal Echo')
+  await l2.getByRole('button', { name: 'Impression', exact: true }).click()
+  await expect(l2.getByLabel('Auditing done')).toBeVisible()
+  await expect(l2.getByLabel('Report completed')).toHaveCount(0)
+  await l2.getByLabel('Auditing done').check()
+  await l2.getByRole('button', { name: 'Save report' }).last().click()
+  await expect(l2.getByText('Fetal echo report saved.').first()).toBeVisible()
+  await expect(l2.getByText('Audit: Done — L2 Dummy').first()).toBeVisible()
+  await l2.close()
+
+  const l3 = await browser.newPage()
+  await login(l3, 'dr.shanthi', info.password)
+  await openReport(l3, info, 'Fetal Echo')
+  await l3.getByRole('button', { name: 'Impression', exact: true }).click()
+  await expect(l3.getByLabel('Report completed')).toBeVisible()
+  await l3.getByLabel('Report completed').check()
+  await l3.getByRole('button', { name: 'Save report' }).last().click()
+  await l3.getByRole('button', { name: 'Complete and lock' }).click()
+  await expect(l3.getByRole('status')).toContainText('Completed report — read-only.')
+  await expect(l3.getByRole('button', { name: 'Report locked' })).toBeDisabled()
+  await l3.reload()
+  await expect(l3.getByRole('button', { name: 'Report locked' })).toBeDisabled()
+  await l3.close()
+
+  const lockedView = await browser.newPage()
+  await login(lockedView, 'l1', info.password)
+  await openReport(lockedView, info, 'Fetal Echo')
+  await lockedView.getByRole('button', { name: 'Impression', exact: true }).click()
+  await expect(lockedView.getByRole('button', { name: 'Report locked' })).toBeDisabled()
+  await expect(lockedView.getByText('Audit: Done — L2 Dummy').first()).toBeVisible()
+  await lockedView.close()
+})
