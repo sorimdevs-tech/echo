@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Save, Trash2, Image, Camera } from 'lucide-react'
 import { scanService } from '../api/scanService'
 import { patientService } from '../api/patientService'
+import SearchableSelect from '../components/SearchableSelect'
 
 function EchoScan() {
   const [patients, setPatients] = useState([])
@@ -441,18 +442,16 @@ function EchoScan() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Patient *</label>
-                  <select
-                    className="input"
+                  <SearchableSelect
+                    options={patients.map(p => ({
+                      value: p.id,
+                      label: `${p.patient_id || ''} — ${p.first_name || ''} ${p.last_name || ''}`.trim()
+                    }))}
                     value={selectedPatient}
-                    onChange={(e) => setSelectedPatient(e.target.value)}
-                  >
-                    <option value="">Select Patient</option>
-                    {patients.map(patient => (
-                      <option key={patient.id} value={patient.id}>
-                        {patient.patient_id} - {patient.first_name} {patient.last_name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedPatient(val)}
+                    placeholder="Select Patient"
+                    searchPlaceholder="Search patient ID or name..."
+                  />
                 </div>
               </div>
 

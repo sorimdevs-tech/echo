@@ -217,3 +217,21 @@ All fields from the reference images have been implemented:
 ## License
 
 © 2024 EchoScan. All rights reserved.
+
+## Deploy to Render with the included data
+
+The repository includes a Render Blueprint and a Docker image that build the
+React frontend and serve it from the FastAPI backend as one web service.
+
+The Render service uses a persistent disk mounted at `/var/data`. On its first
+start, the application copies the bundled `backend/echo.db` database to that
+disk, so the sample patients, visits, scans, doctors, reports, and settings are
+available immediately. Later changes are retained across restarts and deploys.
+
+1. Push the repository to GitHub.
+2. In Render, choose **New > Blueprint**.
+3. Connect the GitHub repository and select the `main` branch.
+4. Render will detect `render.yaml`; approve the Blueprint and deploy it.
+
+The Blueprint uses a paid Starter web service because Render persistent disks
+are not available on free web services.

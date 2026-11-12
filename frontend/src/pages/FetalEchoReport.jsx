@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  Cog,
   FileImage,
+  FileText,
+  FolderOpen,
   Image,
   Printer,
   RotateCcw,
@@ -11,6 +14,12 @@ import {
 } from 'lucide-react'
 import { patientService } from '../api/patientService'
 import { scanService } from '../api/scanService'
+
+import ImagesModal from '../components/ImagesModal'
+import ReportConfigModal from '../components/ReportConfigModal'
+import SearchableSelect from '../components/SearchableSelect'
+import ExistingScansModal from '../components/ExistingScansModal'
+import ReferralLetterModal from '../components/ReferralLetterModal'
 
 const mainTabs = [
   { id: 'scan', label: 'Scan' },
@@ -214,16 +223,16 @@ const initialReport = {
     },
   },
   impression: {
-    report_title: 'Echo Cardiography Report',
+    report_title: 'Fetal Echocardiography Report',
     first_line: '',
     header_comments: '',
     footer_comments: '',
     print_system_impression: true,
     system_impression_position: 'before',
     system_impression: '',
-    final_impression: '',
+    final_impression: 'Fetal Echocardiography did not reveal any major abnormality in the structure, function or rhythm of the Fetal heart',
     report_completed: false,
-    disclaimer_comments: '',
+    disclaimer_comments: 'Limitation of Fetal Echocardiography is to be understood as intention of Fetal Echo is to rule out major cardiac defects and minor or evolving anomalies may not be detected. Sometimes it may not be possible to see certian types of holes or valve problems in fetal life. In addition heart rate/ rhythm problems or heart muscle diseases usually evolve during late gestation when second trimester scan may not show such abnormality.',
     internal_comments: '',
     report_signed_by_l: '',
     report_signed_by_r: '',
@@ -293,6 +302,46 @@ function getPatientName(patient) {
   return name || patient.patient_id || ''
 }
 
+const fetalNormalComments = {
+  general: {
+    cardiac_views: 'Normal (Situs)',
+    abdominal_situs: 'Normal',
+    stomach: 'Left Sided',
+    heart_size: 'Normal',
+    apex: 'Normal',
+    cardiac_axis: 'Normal',
+    rhythm: 'Normal\n1:1 AV conduction',
+    fhr: '137',
+    pericardial_effusion: false,
+  },
+  four_chamber: {
+    atria: 'Normal',
+    ventricles: 'Normal',
+    atrioventricular_junction: 'Concordant, normal av connection',
+    atrioventricular_regurgitation: 'None',
+    interventricular_septum: 'Intact (well seen)',
+    ventricular_function: 'Normal',
+    interatrial_septum: 'Normal (Foramen Ovale in mid third of septum, flap valve in LA)',
+    foramen_ovale: 'Normal flow (Right to Left )',
+  },
+  outflow_tract: {
+    outflow_tracts: 'Normal',
+    great_arteries_relationship: 'Concordant',
+    va_valve_regurgitation: 'None',
+    branch_pulmonary_artery: 'Confluent, good sized',
+    ductus_arteriosus: 'Normal in size and flow',
+    aortic_arch: 'Normal',
+    side_of_arch: 'Normal, left of trachea',
+    three_vessel_view: 'Normal',
+    three_vt_view: 'Normal',
+  },
+  others: {
+    systemic_veins: 'Normal',
+    pulmonary_veins: 'Normal',
+    other_lesions: 'Normal origin of right subclavian artery',
+  },
+}
+
 function FetalEchoReport() {
   const navigate = useNavigate()
   const { scanId } = useParams()
@@ -304,15 +353,117 @@ function FetalEchoReport() {
   const [activeScanTab, setActiveScanTab] = useState('echo-details')
   const [activeImageTab, setActiveImageTab] = useState('images')
   const [isLmpOpen, setIsLmpOpen] = useState(false)
+  const [isImagesModalOpen, setIsImagesModalOpen] = useState(false)
+  const [isReportPreviewOpen, setIsReportPreviewOpen] = useState(false)
+  const [isExistingScansOpen, setIsExistingScansOpen] = useState(false)
+  const [isReferralLetterOpen, setIsReferralLetterOpen] = useState(false)
   const [report, setReport] = useState(() => deepClone(initialReport))
   const [savedScanId, setSavedScanId] = useState(scanId || '')
   const [isSaving, setIsSaving] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
 
   const selectedPatient = useMemo(
-    () => patients.find((patient) => patient.id === selectedPatientId),
+    () => patients.find((patient) => String(patient.id) === String(selectedPatientId)),
     [patients, selectedPatientId],
   )
+
+  const isNormalCommentsPopulated = useMemo(() => {
+    const gen = report.echo_details?.general
+    const fc = report.echo_details?.four_chamber
+    const ot = report.echo_details?.outflow_tract
+    const oth = report.echo_details?.others
+
+    return Boolean(
+      gen?.cardiac_views || gen?.abdominal_situs || gen?.stomach ||
+      fc?.atria || fc?.ventricles || ot?.outflow_tracts || oth?.systemic_veins
+    )
+  }, [report.echo_details])
+
+  const scatterNormalComments = () => {
+    setReport((current) => ({
+      ...current,
+      echo_details: {
+        ...current.echo_details,
+        general: {
+          ...current.echo_details.general,
+          ...fetalNormalComments.general,
+        },
+        four_chamber: {
+          ...current.echo_details.four_chamber,
+          ...fetalNormalComments.four_chamber,
+        },
+        outflow_tract: {
+          ...current.echo_details.outflow_tract,
+          ...fetalNormalComments.outflow_tract,
+        },
+        others: {
+          ...current.echo_details.others,
+          ...fetalNormalComments.others,
+        },
+      },
+      impression: {
+        ...current.impression,
+        final_impression: 'Fetal Echocardiography did not reveal any major abnormality in the structure, function or rhythm of the Fetal heart',
+        disclaimer_comments: 'Limitation of Fetal Echocardiography is to be understood as intention of Fetal Echo is to rule out major cardiac defects and minor or evolving anomalies may not be detected. Sometimes it may not be possible to see certian types of holes or valve problems in fetal life. In addition heart rate/ rhythm problems or heart muscle diseases usually evolve during late gestation when second trimester scan may not show such abnormality.',
+      },
+    }))
+  }
+
+  const toggleNormalComments = () => {
+    if (isNormalCommentsPopulated) {
+      setReport((current) => ({
+        ...current,
+        echo_details: {
+          ...current.echo_details,
+          general: {
+            ...current.echo_details.general,
+            cardiac_views: '',
+            abdominal_situs: '',
+            stomach: '',
+            heart_size: '',
+            apex: '',
+            cardiac_axis: '',
+            rhythm: '',
+          },
+          four_chamber: {
+            ...current.echo_details.four_chamber,
+            atria: '',
+            ventricles: '',
+            atrioventricular_junction: '',
+            atrioventricular_regurgitation: '',
+            interventricular_septum: '',
+            ventricular_function: '',
+            interatrial_septum: '',
+            foramen_ovale: '',
+          },
+          outflow_tract: {
+            ...current.echo_details.outflow_tract,
+            outflow_tracts: '',
+            va_valve_regurgitation: '',
+            branch_pulmonary_artery: '',
+            ductus_arteriosus: '',
+            aortic_arch: '',
+            side_of_arch: '',
+            three_vessel_view: '',
+            three_vt_view: '',
+          },
+          others: {
+            ...current.echo_details.others,
+            systemic_veins: '',
+            pulmonary_veins: '',
+          },
+        },
+      }))
+    } else {
+      scatterNormalComments()
+    }
+  }
+
+  useEffect(() => {
+    if (searchParams.get('scatter') === 'true' || searchParams.get('autoScatter') === 'true') {
+      scatterNormalComments()
+    }
+  }, [searchParams])
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -383,6 +534,11 @@ function FetalEchoReport() {
       return
     }
 
+    if (!report.impression.primary_consultant?.trim()) {
+      setStatusMessage('Enter a primary consultant before saving this report.')
+      return
+    }
+
     setIsSaving(true)
     setStatusMessage('')
 
@@ -396,7 +552,7 @@ function FetalEchoReport() {
       no_of_fetuses: report.no_of_fetuses,
       ga_weeks: report.ga_weeks,
       ga_days: report.ga_days,
-      status: report.impression.report_completed ? 'Completed' : 'In Progress',
+      status: 'In Progress',
       fetal_echo_report: report,
     }
 
@@ -431,7 +587,8 @@ function FetalEchoReport() {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100 text-sm text-slate-900">
+    <>
+      <div className="no-print report-editor-form min-h-0 flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100 text-sm text-slate-900">
       <div className="flex min-h-full flex-col gap-3">
         <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
@@ -444,31 +601,36 @@ function FetalEchoReport() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={scatterNormalComments}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700"
+              >
+                ✓ Fill Normal Scan
+              </button>
               <ToolbarButton icon={Save} label={isSaving ? 'Saving' : 'Save'} onClick={handleSave} />
               <ToolbarButton icon={Trash2} label="Delete" />
               <ToolbarButton icon={RotateCcw} label="Clear" onClick={handleClear} />
-              <ToolbarButton icon={Printer} label="Preview" onClick={() => window.print()} />
-              <ToolbarButton icon={FileImage} label="Images" onClick={() => setActiveImageTab('images')} />
+              <ToolbarButton icon={Printer} label="Preview" onClick={() => setIsReportPreviewOpen(true)} />
+              <ToolbarButton icon={FileImage} label="Images" onClick={() => setIsImagesModalOpen(true)} />
               <ToolbarButton icon={X} label="Close" onClick={() => navigate('/search')} />
             </div>
           </div>
 
           <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_minmax(240px,1fr)_minmax(180px,0.55fr)_auto]">
-            <label className="field-label">
-              Patient
-              <select
+            <div className="field-label">
+              <span>Patient</span>
+              <SearchableSelect
+                options={patients.map((p) => ({
+                  value: p.id,
+                  label: `${p.patient_id || ''} — ${getPatientName(p)}`.trim(),
+                }))}
                 value={selectedPatientId}
-                onChange={(event) => setSelectedPatientId(event.target.value)}
-                className="field-control"
-              >
-                <option value="">Select patient</option>
-                {patients.map((patient) => (
-                  <option key={patient.id} value={patient.id}>
-                    {patient.patient_id} - {getPatientName(patient)}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={(val) => setSelectedPatientId(val)}
+                placeholder="Select patient"
+                searchPlaceholder="Search patient ID or name..."
+              />
+            </div>
 
             <HeaderField
               label="Indication(s)"
@@ -495,8 +657,22 @@ function FetalEchoReport() {
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" className="legacy-small-button">Open existing scans</button>
-              <button type="button" className="legacy-small-button">Ref. Letter</button>
+              <button
+                type="button"
+                onClick={() => setIsExistingScansOpen(true)}
+                className="legacy-small-button"
+              >
+                <FolderOpen className="mr-1.5 h-4 w-4 text-teal-600" />
+                Open existing scans
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsReferralLetterOpen(true)}
+                className="legacy-small-button"
+              >
+                <FileText className="mr-1.5 h-4 w-4 text-blue-600" />
+                Ref. Letter
+              </button>
               <button type="button" onClick={() => setIsLmpOpen(true)} className="legacy-small-button">LMP</button>
               <InlineField label="No. of fetuses" value={report.no_of_fetuses} onChange={(value) => updateReport(['no_of_fetuses'], value)} width="w-20" />
               <InlineField label="GA" value={report.ga_weeks} onChange={(value) => updateReport(['ga_weeks'], value)} width="w-20" suffix="wks" />
@@ -553,6 +729,8 @@ function FetalEchoReport() {
                   setActiveScanTab={setActiveScanTab}
                   report={report}
                   updateReport={updateReport}
+                  onToggleNormalComments={toggleNormalComments}
+                  isNormalCommentsPopulated={isNormalCommentsPopulated}
                 />
               ) : (
                 <ImpressionPanel report={report} updateReport={updateReport} />
@@ -581,11 +759,47 @@ function FetalEchoReport() {
           }}
         />
       )}
+
+      <ImagesModal
+        open={isImagesModalOpen}
+        onClose={() => setIsImagesModalOpen(false)}
+        patient={selectedPatient}
+      />
+      <ExistingScansModal
+        isOpen={isExistingScansOpen}
+        onClose={() => setIsExistingScansOpen(false)}
+        patientId={selectedPatientId}
+        patient={selectedPatient}
+        currentScanId={savedScanId || scanId}
+      />
+      <ReferralLetterModal
+        isOpen={isReferralLetterOpen}
+        onClose={() => setIsReferralLetterOpen(false)}
+        patient={selectedPatient}
+        scanType="Fetal Echo"
+        report={report}
+        scanId={savedScanId || scanId}
+      />
     </div>
+    {isReportPreviewOpen && (
+      <ReportPreviewModal
+        report={report}
+        patient={selectedPatient}
+        visitId={selectedVisitId}
+        onClose={() => setIsReportPreviewOpen(false)}
+      />
+    )}
+    <FetalPrintReport
+      report={report}
+      patient={selectedPatient}
+      visitId={selectedVisitId}
+      isReportPreviewOpen={isReportPreviewOpen}
+    />
+    </>
   )
 }
 
-function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
+function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport, onToggleNormalComments, isNormalCommentsPopulated }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 px-2 pt-2">
@@ -602,7 +816,14 @@ function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
           </TabButton>
         ))}
       </div>
-      {activeScanTab === 'echo-details' && <EchoDetailsTab report={report} updateReport={updateReport} />}
+      {activeScanTab === 'echo-details' && (
+        <EchoDetailsTab
+          report={report}
+          updateReport={updateReport}
+          onToggleNormalComments={onToggleNormalComments}
+          isNormalCommentsPopulated={isNormalCommentsPopulated}
+        />
+      )}
       {activeScanTab === 'biometry' && <BiometryTab report={report} updateReport={updateReport} />}
       {activeScanTab === 'doppler' && <DopplerTab report={report} updateReport={updateReport} />}
       {activeScanTab === 'aortic' && <AorticTab report={report} updateReport={updateReport} />}
@@ -610,7 +831,7 @@ function ScanPanel({ activeScanTab, setActiveScanTab, report, updateReport }) {
   )
 }
 
-function EchoDetailsTab({ report, updateReport }) {
+function EchoDetailsTab({ report, updateReport, onToggleNormalComments, isNormalCommentsPopulated }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
@@ -689,7 +910,13 @@ function EchoDetailsTab({ report, updateReport }) {
         </Fieldset>
       </div>
       <aside className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <button type="button" className="legacy-small-button mb-4">Scatter normal comments</button>
+        <button
+          type="button"
+          onClick={onToggleNormalComments}
+          className="legacy-small-button mb-4"
+        >
+          {isNormalCommentsPopulated ? 'Clear all comments' : 'Scatter normal comments'}
+        </button>
         <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
           <input
             type="checkbox"
@@ -936,7 +1163,7 @@ function ImpressionPanel({ report, updateReport }) {
         <div className="flex items-center justify-between">
           <span>Final impression-(F11-Show previous)</span>
           <label className="mr-16 flex items-center gap-2 font-semibold text-green-700">
-            <input type="checkbox" checked={impression.report_completed} onChange={(event) => updateReport(['impression', 'report_completed'], event.target.checked)} />
+            <input disabled title="Use the review panel to complete this report" type="checkbox" checked={impression.report_completed} onChange={(event) => updateReport(['impression', 'report_completed'], event.target.checked)} />
             Report completed
           </label>
         </div>
@@ -946,8 +1173,6 @@ function ImpressionPanel({ report, updateReport }) {
       </div>
 
       <aside className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <ComboWithNew label="Report signed by (L)" value={impression.report_signed_by_l} onChange={(value) => updateReport(['impression', 'report_signed_by_l'], value)} />
-        <ComboWithNew label="Report signed by (R)" value={impression.report_signed_by_r} onChange={(value) => updateReport(['impression', 'report_signed_by_r'], value)} />
         <Fieldset title="Investigation status">
           {[
             ['Abnormal', 'abnormal'],
@@ -959,8 +1184,8 @@ function ImpressionPanel({ report, updateReport }) {
             </label>
           ))}
         </Fieldset>
-        <TextInput label="Primary consultant" value={impression.primary_consultant} onChange={(value) => updateReport(['impression', 'primary_consultant'], value)} />
-        <TextArea label="Second consultant" value={impression.second_consultant} onChange={(value) => updateReport(['impression', 'second_consultant'], value)} rows={3} />
+        <TextInput label="Primary consultant (required)" value={impression.primary_consultant} onChange={(value) => updateReport(['impression', 'primary_consultant'], value)} />
+        <TextArea label="Secondary consultant (optional)" value={impression.second_consultant} onChange={(value) => updateReport(['impression', 'second_consultant'], value)} rows={3} />
         <TextArea label="Audited by" value={impression.audited_by} onChange={(value) => updateReport(['impression', 'audited_by'], value)} rows={3} />
         <TextArea label="Reviewed by" value={impression.reviewed_by} onChange={(value) => updateReport(['impression', 'reviewed_by'], value)} rows={3} />
         <TextArea label="Report typed by" value={impression.report_typed_by} onChange={(value) => updateReport(['impression', 'report_typed_by'], value)} rows={3} />
@@ -983,7 +1208,14 @@ function ImagePanel({ activeImageTab, setActiveImageTab, report, updateReport })
       <div className="space-y-4 p-4">
         <div className="grid grid-cols-2 gap-2">
           {['Import', 'Export', 'Delete', 'Print', 'Rule of three', 'Image title', 'Process', 'Ink Save', 'Refresh', 'Organ drawing'].map((label) => (
-            <button key={label} type="button" className="legacy-small-button">{label}</button>
+            <button
+              key={label}
+              type="button"
+              onClick={label === 'Print' ? () => setIsReportPreviewOpen(true) : undefined}
+              className="legacy-small-button"
+            >
+              {label}
+            </button>
           ))}
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
@@ -1127,13 +1359,67 @@ function Fieldset({ title = '', className = '', children }) {
   )
 }
 
+const fetalFieldOptions = {
+  'Cardiac views': ['Normal (Situs)', 'Situs Inversus', 'Situs Ambiguus', 'Not Visualised'],
+  'Abdominal situs': ['Normal', 'Inversus', 'Ambiguus', 'Left Sided', 'Right Sided'],
+  'Stomach': ['Left Sided', 'Right Sided', 'Absent', 'Normal'],
+  'Heart size': ['Normal', 'Enlarged', 'Small'],
+  'Apex': ['Normal', 'Left Sided', 'Right Sided', 'Midline'],
+  'Cardiac axis': ['Normal', 'Deviated Left', 'Deviated Right'],
+  'Rhythm': ['Normal', 'Bradycardia', 'Tachycardia', 'Ectopic beats', 'Irregular'],
+  'Atria': ['Normal', 'Dilated Right Atrium', 'Dilated Left Atrium', 'Single Atrium'],
+  'Ventricles': ['Normal', 'Hypoplastic Left Ventricle', 'Hypoplastic Right Ventricle', 'Dilated'],
+  'Atrioventricular junction': ['Concordant, normal', 'Discordant', 'Single Inlet', 'Double Inlet'],
+  'Atrioventricular regurgitation': ['None', 'Tricuspid Regurgitation', 'Mitral Regurgitation', 'Mild', 'Moderate', 'Severe'],
+  'Inter ventricular septum': ['Intact (well seen)', 'VSD (Perimembranous)', 'VSD (Muscular)', 'VSD (Inlet)', 'VSD (Outlet)'],
+  'Ventricular function': ['Normal', 'Depressed LV Function', 'Depressed RV Function', 'Biventricular Dysfunction'],
+  'Inter atrial septum': ['Normal (Foramen Oval Flap Seen)', 'ASD (Secundum)', 'ASD (Primum)', 'Intact'],
+  'Foramen ovale': ['Normal flow (Right to Left)', 'Restricted Flow', 'Reversed Flow (Left to Right)'],
+  'Outflow tracts': ['Normal', 'Transposition of Great Arteries', 'Tetralogy of Fallot', 'Truncus Arteriosus', 'Double Outlet RV'],
+  'V-A valve regurgitation': ['None', 'Aortic Regurgitation', 'Pulmonary Regurgitation', 'Mild', 'Moderate', 'Severe'],
+  'Branch pulmonary artery': ['Confluent, good size', 'Hypoplastic RPA', 'Hypoplastic LPA', 'Stenotic'],
+  'Ductus arteriosus': ['Normal in size and direction', 'Constricted', 'Absent', 'Reversed Flow'],
+  'Aortic arch': ['Normal', 'Coarctation', 'Hypoplastic Arch', 'Interrupted Arch'],
+  'Side of arch': ['Normal, left of trachea', 'Right Arch', 'Double Arch'],
+  '3VV': ['Normal', 'Abnormal Vessel Size', 'Abnormal Alignment'],
+  '3VT view': ['Normal', 'V-Sign Normal', 'U-Sign / Right Arch', 'Single Vessel'],
+  'Systemic veins': ['Normal', 'Persistent Left SVC', 'Interrupted IVC with Azygos Continuation'],
+  'Pulmonary veins': ['Normal', 'TAPVC', 'PAPVC', 'Partial Anomalous'],
+}
+
 function LegacyField({ label, value, onChange, withPlus = false }) {
+  const options = fetalFieldOptions[label] || ['Normal', 'Abnormal', 'Not Visualised']
+  const listId = `dl-${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+
   return (
-    <label className="grid min-w-0 gap-1 sm:grid-cols-[minmax(130px,0.8fr)_minmax(0,1fr)] sm:items-center">
+    <label className="grid min-w-0 gap-1 sm:grid-cols-[minmax(140px,0.85fr)_minmax(0,1fr)] sm:items-center">
       <span className="text-sm font-medium text-slate-700">{label}</span>
-      <span className="flex min-w-0 gap-2">
-        <input className="legacy-input w-full" value={value || ''} onChange={(event) => onChange(event.target.value)} />
-        {withPlus && <button type="button" className="legacy-plus-button">+</button>}
+      <span className="flex min-w-0 items-center gap-1.5">
+        <input
+          list={listId}
+          className="legacy-input w-full"
+          value={value || ''}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Select or type..."
+        />
+        <datalist id={listId}>
+          {options.map((opt) => (
+            <option key={opt} value={opt} />
+          ))}
+        </datalist>
+        {withPlus && (
+          <button
+            type="button"
+            className="legacy-plus-button"
+            title={`Add custom option for ${label}`}
+            onClick={() => {
+              const newVal = prompt(`Enter custom value for ${label}:`, value || '')
+              if (newVal !== null) onChange(newVal)
+            }}
+          >
+            +
+          </button>
+        )}
       </span>
     </label>
   )
@@ -1245,6 +1531,517 @@ function ComboWithNew({ label, value, onChange }) {
         <button type="button" className="legacy-small-button">New</button>
       </span>
     </label>
+  )
+}
+
+function formatDisplayDate(date) {
+  if (!date) return new Date().toLocaleDateString('en-GB')
+  const d = new Date(date)
+  if (Number.isNaN(d.getTime())) return new Date().toLocaleDateString('en-GB')
+  return d.toLocaleDateString('en-GB')
+}
+
+function getDoctorProfile(consultantName) {
+  try {
+    const saved = localStorage.getItem('echoai_doctor_profile')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      return {
+        name: consultantName || parsed.name || 'DR C.SHANTHI',
+        degrees: parsed.degrees || 'MBBS, DCH, DNB(PED) FNB(PED CARDIO)',
+        signatureName: parsed.name ? parsed.name.replace(/^Dr\.?\s*/i, '') : 'C. Shanthi',
+        registrationNo: parsed.registrationNo || 'PNA / 10047 / 2024.',
+      }
+    }
+    const user = localStorage.getItem('echoai_user') || sessionStorage.getItem('echoai_user')
+    if (user) {
+      const parsed = JSON.parse(user)
+      return {
+        name: consultantName || parsed.name || 'DR C.SHANTHI',
+        degrees: 'MBBS, DCH, DNB(PED) FNB(PED CARDIO)',
+        signatureName: parsed.name ? parsed.name.replace(/^Dr\.?\s*/i, '') : 'C. Shanthi',
+        registrationNo: 'PNA / 10047 / 2024.',
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching doctor profile', e)
+  }
+  return {
+    name: consultantName || 'DR C.SHANTHI',
+    degrees: 'MBBS, DCH, DNB(PED) FNB(PED CARDIO)',
+    signatureName: 'C. Shanthi',
+    registrationNo: 'PNA / 10047 / 2024.',
+  }
+}
+
+function PatientHeaderTable({ patient, visitId, visitDate }) {
+  const patientName = getPatientName(patient) || 'Mrs. SURYA B'
+  const ageSex = `${patient?.age ? `${patient.age} Years` : '28 Years'} / ${patient?.gender || 'Female'}`
+  const patientId = patient?.patient_id || 'TM334'
+  const visitNo = visitId || '1'
+  const refBy = patient?.family_doctor || patient?.referral_doctor || 'Dr. SARALA GOVINDARAJAN'
+
+  return (
+    <table className="document-patient-table">
+      <tbody>
+        <tr>
+          <td className="th-label">Patient name</td>
+          <td className="td-val font-semibold">{patientName}</td>
+          <td className="th-label">Age/Sex</td>
+          <td className="td-val">{ageSex}</td>
+        </tr>
+        <tr>
+          <td className="th-label">Patient Id</td>
+          <td className="td-val font-semibold">{patientId}</td>
+          <td className="th-label">Visit no</td>
+          <td className="td-val">{visitNo}</td>
+        </tr>
+        <tr>
+          <td className="th-label">Referred by</td>
+          <td className="td-val">{refBy}</td>
+          <td className="th-label">Visit date</td>
+          <td className="td-val">{visitDate}</td>
+        </tr>
+      </tbody>
+    </table>
+  )
+}
+
+function FetalDocumentPages({ report, patient, visitId }) {
+  const gen = report.echo_details?.general || {}
+  const fc = report.echo_details?.four_chamber || {}
+  const ot = report.echo_details?.outflow_tract || {}
+  const oth = report.echo_details?.others || {}
+  const bio = report.biometry?.b_mode || {}
+  const imp = report.impression || {}
+  const doctor = getDoctorProfile(imp.primary_consultant)
+
+  const patientName = getPatientName(patient) || 'Mrs. SURYA B'
+  const ageId = `${patient?.age ? `${patient.age} Y` : '28 Y'} / ${patient?.patient_id || 'PAT000102'}`
+  const refBy = patient?.family_doctor || patient?.referral_doctor || 'Dr. SARALA GOVINDARAJAN'
+
+  const mv = parseFloat(bio.mitral_valve || 0)
+  const tv = parseFloat(bio.tricuspid_valve || 0)
+  const ratio = (mv > 0 && tv > 0) ? (tv / mv).toFixed(2) : '1.05'
+
+  const gaText = `${report.ga_weeks || '24'} Weeks${report.ga_days && report.ga_days !== '0' ? ` ${report.ga_days} Days` : ''}`
+  const indicationText = report.indication || 'Routine referral'
+  const qualityText = report.echo_details?.general?.quality || report.quality || 'Optimal'
+
+  return (
+    <div className="report-template-sheet printable-report">
+      {/* Master Header - Centered with dark blue underline */}
+      <div className="report-template-header">
+        <h1>{imp.report_title || 'FETAL ECHOCARDIOGRAPHY REPORT'}</h1>
+      </div>
+
+      {/* Patient Info Grid - ONLY at top of report (never repeated) */}
+      <div className="report-patient-grid">
+        <div><strong>Patient Name:</strong> {patientName}</div>
+        <div><strong>Age / ID:</strong> {ageId}</div>
+        <div><strong>Ref By:</strong> {refBy}</div>
+        <div><strong>LMP:</strong> {report.lmp?.lmp_date || '—'}</div>
+        <div><strong>EDD:</strong> {report.lmp?.edd || '—'}</div>
+        <div><strong>GA:</strong> {gaText}</div>
+      </div>
+
+      <div className="flex items-center gap-3 mb-2 px-1 text-xs text-slate-800">
+        <div><strong>Indication:</strong> {indicationText}</div>
+        <span className="text-slate-400">|</span>
+        <div><strong>Quality:</strong> {qualityText}</div>
+      </div>
+
+      {/* 1. Structure, Situs & Position */}
+      <div className="report-section-banner">1. Structure, Situs & Position</div>
+      <table className="report-data-table">
+        <tbody>
+          <tr>
+            <td className="row-label">Abdominal Situs</td>
+            <td>{gen.abdominal_situs || 'Solitus'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Cardiac Situs</td>
+            <td>{gen.cardiac_views || 'Solitus'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Cardiac Position</td>
+            <td>{gen.apex || 'Levocardia'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Cardiac Axis</td>
+            <td>{gen.cardiac_axis || 'Normal'}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* 2. Venous Connections & Atria */}
+      <div className="report-section-banner">2. Venous Connections & Atria</div>
+      <table className="report-data-table">
+        <tbody>
+          <tr>
+            <td className="row-label">Systemic Vein</td>
+            <td>{oth.systemic_veins || 'Normal'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Pulmonary Veins</td>
+            <td>{oth.pulmonary_veins || 'Normal (2 to LA)'}</td>
+          </tr>
+          <tr>
+            <td className="sub-label">Left Atrium</td>
+            <td>{fc.atria || 'Normal'}</td>
+          </tr>
+          <tr>
+            <td className="sub-label">Right Atrium</td>
+            <td>{fc.atria || 'Normal'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Inter-atrial Septum</td>
+            <td>{fc.interatrial_septum || 'Normal (Foramen Ovale in mid third of septum, flap valve in LA)'}</td>
+          </tr>
+          <tr>
+            <td className="sub-label">Foramen-ovale flap</td>
+            <td>{fc.foramen_ovale || 'Normal flow (Right to Left )'}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* 3. AV Junction, Valves & Ventricles */}
+      <div className="report-section-banner">3. AV Junction, Valves & Ventricles</div>
+      <table className="report-data-table">
+        <tbody>
+          <tr>
+            <td className="row-label">AV Junction/Crux</td>
+            <td>{fc.atrioventricular_junction || 'Concordant, normal av connection'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">AV Connection</td>
+            <td>Concordant</td>
+          </tr>
+          <tr>
+            <td className="sub-label">Tricuspid Valve</td>
+            <td>Size: Norm | Leaflets: Norm{fc.atrioventricular_regurgitation ? ` | Regurgitation: ${fc.atrioventricular_regurgitation}` : ' | Regurgitation: None'}</td>
+          </tr>
+          <tr>
+            <td className="sub-label">Mitral Valve</td>
+            <td>Size: Norm | Leaflets: Norm{fc.atrioventricular_regurgitation ? ` | Regurgitation: ${fc.atrioventricular_regurgitation}` : ' | Regurgitation: None'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Right Ventricle</td>
+            <td>Size: Norm | Contractility: {fc.ventricles || 'Normal'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Left Ventricle</td>
+            <td>Size: Norm | Contractility: {fc.ventricular_function || 'Normal'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Interventricular Septum</td>
+            <td>{fc.interventricular_septum || 'Intact (well seen)'}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* 4. Outflow Tracts & Arches */}
+      <div className="report-section-banner avoid-break">4. Outflow Tracts & Arches</div>
+      <table className="report-data-table avoid-break">
+        <tbody>
+          <tr>
+            <td className="row-label">VA Connection</td>
+            <td>Concordant</td>
+          </tr>
+          <tr>
+            <td className="row-label">Aortic Valve</td>
+            <td>{ot.outflow_tracts || 'Normal'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Aorta (Size/Pos)</td>
+            <td>{ot.aortic_arch || 'Normal'} | Pos: Norm</td>
+          </tr>
+          <tr>
+            <td className="row-label">Pulmonary Valve</td>
+            <td>{ot.va_valve_regurgitation ? `Regurgitation: ${ot.va_valve_regurgitation}` : 'Normal'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Main Pulm. Artery</td>
+            <td>Size: Normal | Pos: Norm</td>
+          </tr>
+          <tr>
+            <td className="row-label">Branch Pulm. Art.</td>
+            <td>{ot.branch_pulmonary_artery || 'Confluent, good sized'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Aortic Arch</td>
+            <td>Pos: {ot.side_of_arch || 'Normal, left of trachea'} | Size: {ot.aortic_arch || 'Normal'}</td>
+          </tr>
+          <tr>
+            <td className="row-label">Ductal Arch</td>
+            <td>{ot.ductus_arteriosus || 'Normal in size and flow'}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* 5. Biometry & Z-Scores */}
+      <div className="report-section-banner avoid-break">5. Biometry & Z-Scores</div>
+      <table className="report-data-table avoid-break">
+        <thead>
+          <tr>
+            <th>Structure Annulus</th>
+            <th>Diameter (mm)</th>
+            <th>Z-Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Mitral Valve (LV)</td>
+            <td>{bio.mitral_valve ? `${bio.mitral_valve}` : '10.2'}</td>
+            <td>{bio.mitral_valve_z || '—'}</td>
+          </tr>
+          <tr>
+            <td>Tricuspid Valve (RV)</td>
+            <td>{bio.tricuspid_valve ? `${bio.tricuspid_valve}` : '10.7'}</td>
+            <td>{bio.tricuspid_valve_z || '—'}</td>
+          </tr>
+          <tr>
+            <td>Aortic Valve</td>
+            <td>{bio.aortic_valve ? `${bio.aortic_valve}` : '6.4'}</td>
+            <td>{bio.aortic_valve_z || '—'}</td>
+          </tr>
+          <tr>
+            <td>Pulmonary Valve</td>
+            <td>{bio.pulmonary_valve ? `${bio.pulmonary_valve}` : '6.8'}</td>
+            <td>{bio.pulmonary_valve_z || '—'}</td>
+          </tr>
+          <tr style={{ background: '#f0f7ff' }}>
+            <td colSpan={2}>
+              <strong>Calculated RV / LV Ratio</strong> (Normal ~1.0 - 1.1)
+            </td>
+            <td>
+              <span className="report-ratio-badge">{ratio}</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* 6. Pulsed Doppler Analysis */}
+      <div className="report-section-banner avoid-break">6. Pulsed Doppler Analysis (cm/sec)</div>
+      <table className="report-data-table avoid-break">
+        <thead>
+          <tr>
+            <th>Site</th>
+            <th>Flow Pattern</th>
+            <th>Peak Vel</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Tricuspid (TV) Inflow</td>
+            <td>Biphasic</td>
+            <td>{report.doppler?.valves?.tricuspid_peak_velocity || '45 cm/s'}</td>
+          </tr>
+          <tr>
+            <td>Mitral (MV) Inflow</td>
+            <td>Biphasic</td>
+            <td>{report.doppler?.valves?.mitral_peak_velocity || '42 cm/s'}</td>
+          </tr>
+          <tr>
+            <td>LVOT / Aorta</td>
+            <td>Normal</td>
+            <td>{report.doppler?.valves?.aortic_peak_velocity || '65 cm/s'}</td>
+          </tr>
+          <tr>
+            <td>RVOT / Pulm Artery</td>
+            <td>Normal</td>
+            <td>{report.doppler?.valves?.pulmonary_peak_velocity || '60 cm/s'}</td>
+          </tr>
+          <tr>
+            <td>Ductus Arteriosus</td>
+            <td>Normal</td>
+            <td>{report.doppler?.valves?.ductus_arteriosus_peak_velocity || '72 cm/s'}</td>
+          </tr>
+          <tr>
+            <td>Ductus Venosus</td>
+            <td>Normal</td>
+            <td>{report.doppler?.venous?.ductus_venosus_systolic_peak || '55 cm/s'}</td>
+          </tr>
+          <tr>
+            <td>Pulmonary Venous</td>
+            <td>Normal</td>
+            <td>{report.doppler?.venous?.pulmonary_veins || 'Normal'}</td>
+          </tr>
+          <tr>
+            <td>Foramen-Ovale Shunt</td>
+            <td>Rt to Lt</td>
+            <td>Normal</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* 7. Fetal Heart Rate & Rhythm */}
+      <div className="report-section-banner avoid-break">7. Fetal Heart Rate & Rhythm</div>
+      <table className="report-data-table avoid-break">
+        <tbody>
+          <tr>
+            <td className="row-label">Rate</td>
+            <td>{gen.fhr ? `${gen.fhr} bpm` : '137 bpm'} | Normal</td>
+          </tr>
+          <tr>
+            <td className="row-label">Rhythm</td>
+            <td>{gen.rhythm || 'Regular (1:1 AV conduction)'}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Final Impression */}
+      <div className="report-section-banner avoid-break">Final Impression</div>
+      <div className="avoid-break my-2 p-3 bg-slate-50 border border-slate-200 rounded text-xs leading-relaxed text-black font-medium whitespace-pre-line">
+        {imp.final_impression ||
+          'NORMAL SITUS AND LEVOCARDIA. NORMAL SEGMENTAL ANATOMY. NO MAJOR ANOMALY DETECTED. NORMAL RATE AND RHYTHM. NORMAL FLOW PATTERN.'}
+      </div>
+
+      {/* Doctor Signature Block */}
+      <div className="mt-6 mb-3 avoid-break">
+        <div className="h-10 flex items-end">
+          <span
+            style={{
+              fontFamily: "'Brush Script MT', 'Dancing Script', 'Segoe Script', cursive, sans-serif",
+              fontSize: '1.9rem',
+              color: '#08145f',
+              display: 'inline-block',
+              transform: 'rotate(-2deg)',
+            }}
+          >
+            {doctor.signatureName}
+          </span>
+        </div>
+        <div className="font-bold text-xs uppercase text-black mt-1">
+          {doctor.name} {doctor.degrees}
+        </div>
+      </div>
+
+      {/* Disclaimer & PCPNDT */}
+      <div className="mt-4 pt-2 border-t border-slate-300 text-[10.5px] leading-relaxed text-slate-800 avoid-break">
+        <div className="font-bold text-black mb-0.5">Disclaimer</div>
+        <p className="mb-1 text-justify">
+          {imp.disclaimer_comments ||
+            'Limitation of Fetal Echocardiography is to be understood as intention of Fetal Echo is to rule out major cardiac defects and minor or evolving anomalies may not be detected. Sometimes it may not be possible to see certian types of holes or valve problems in fetal life. In addition heart rate/ rhythm problems or heart muscle diseases usually evolve during late gestation when second trimester scan may not show such abnormality.'}
+        </p>
+        <div className="font-semibold text-black">
+          PCPNDT registration number {doctor.registrationNo}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReportPreviewModal({ report, patient, visitId, onClose }) {
+  const [isConfigOpen, setIsConfigOpen] = useState(false)
+  const [zoom, setZoom] = useState(100)
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/90 backdrop-blur-sm preview-modal-backdrop">
+      {/* Top Toolbar */}
+      <div className="no-print preview-modal-toolbar flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-2.5 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+            <Printer className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">Fetal Echo Report Preview</h2>
+            <p className="text-[11px] text-slate-500">Official Clinical A4 Print Layout</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Zoom controls */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.max(60, z - 10))}
+              className="rounded px-2 py-1 text-slate-600 hover:bg-white hover:text-slate-900 cursor-pointer"
+              title="Zoom out"
+            >
+              Zoom -
+            </button>
+            <span className="px-2 py-1 text-slate-700 font-mono">{zoom}%</span>
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.min(140, z + 10))}
+              className="rounded px-2 py-1 text-slate-600 hover:bg-white hover:text-slate-900 cursor-pointer"
+              title="Zoom in"
+            >
+              Zoom +
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom(100)}
+              className="rounded px-2 py-1 text-slate-500 hover:bg-white hover:text-slate-800 border-l border-slate-200 cursor-pointer"
+            >
+              100%
+            </button>
+          </div>
+
+          {/* Config button */}
+          <button
+            type="button"
+            onClick={() => setIsConfigOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+            title="Report Settings & Format"
+          >
+            <Cog className="h-3.5 w-3.5 text-slate-500" />
+            Config
+          </button>
+
+          {/* Print / Save PDF Button */}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-teal-700 cursor-pointer"
+            title="Print or Save as PDF (Ctrl + P)"
+          >
+            <Printer className="h-4 w-4" />
+            Print / Save as PDF
+          </button>
+
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition cursor-pointer"
+            title="Close Preview"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Modal Preview Body */}
+      <div className="preview-modal-content flex-1 overflow-y-auto bg-transparent py-8 px-4 flex justify-center">
+        <div
+          style={{
+            transform: `scale(${zoom / 100})`,
+            transformOrigin: 'top center',
+            transition: 'transform 0.15s ease',
+          }}
+          className="w-full max-w-4xl"
+        >
+          <FetalDocumentPages report={report} patient={patient} visitId={visitId} />
+        </div>
+      </div>
+
+      <ReportConfigModal
+        open={isConfigOpen}
+        onClose={() => setIsConfigOpen(false)}
+      />
+    </div>
+  )
+}
+
+function FetalPrintReport({ report, patient, visitId, isReportPreviewOpen }) {
+  if (isReportPreviewOpen) return null
+
+  return (
+    <div className="printable-report hidden print:block">
+      <FetalDocumentPages report={report} patient={patient} visitId={visitId} />
+    </div>
   )
 }
 

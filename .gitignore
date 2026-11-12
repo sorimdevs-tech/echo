@@ -35,3 +35,6 @@ coverage/
 # Cache
 .cache/
 *.pyc
+backend/.initial-login.txt
+
+backend/echo.before-auth.db

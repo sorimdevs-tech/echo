@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Download, ImagePlus, Play, Redo2, RotateCcw, Save, Trash2, Undo2, Upload } from 'lucide-react'
 import { Field, FieldGrid, Section, Tabs, Workspace } from '../components/WorkspaceUI'
+import SearchableSelect from '../components/SearchableSelect'
 import { patientService } from '../api/patientService'
 import { workspaceService } from '../api/workspaceService'
 
@@ -14,8 +15,16 @@ export default function ImagesViewer() {
   const [patientId, setPatientId] = useState('')
   const [visits, setVisits] = useState([])
   const [visitId, setVisitId] = useState('')
+  const [uploadError, setUploadError] = useState('')
   const [templates, setTemplates] = useState([])
   const [config, setConfig] = useState({ source: '', aeTitle: '', host: '', port: '', rows: '', columns: '', autoImport: false, aspectRatio:'', imageTitle:'', storageAeTitle:'', storageHost:'', storagePort:'', anonymous:false })
+
+  const patientOptions = useMemo(() => {
+    return patients.map((item) => ({
+      value: item.id,
+      label: `${item.patient_id || ''} — ${item.first_name || ''} ${item.last_name || ''}`.trim(),
+    }))
+  }, [patients])
 
   useEffect(() => {
     Promise.all([patientService.getPatients(), workspaceService.list('media-records'), workspaceService.getSettings(), workspaceService.getTemplates()]).then(([p,m,s,t]) => {
@@ -29,30 +38,60 @@ export default function ImagesViewer() {
   useEffect(() => { if(patientId) patientService.getVisits(patientId).then((result)=>setVisits(result.data||[])); else {setVisits([]);setVisitId('')} }, [patientId])
 
   const addFiles = async (event) => {
+    setUploadError('')
+    if (!patientId || !visitId) {
+      setUploadError('Select a patient and visit before importing files.')
+      event.target.value = ''
+      return
+    }
     const files = [...event.target.files]
     for (const file of files) {
       const upload = new FormData()
       upload.append('file', file); upload.append('patient_id', patientId); upload.append('visit_id', visitId); upload.append('anonymous', String(config.anonymous)); upload.append('ae_title', config.storageAeTitle||config.aeTitle||''); upload.append('ip_address', config.storageHost||config.host||'')
       try { const result=await workspaceService.uploadMedia(upload);setAssets((current)=>[...current,result.data]) }
-      catch { setAssets((current)=>[...current,{patient_id:patientId,visit_id:visitId,name:file.name,type:file.type||'application/dicom',size:file.size,status:'Local only',id:`local-${Date.now()}`,url:URL.createObjectURL(file)}]) }
+      catch (error) { setUploadError(error.response?.data?.detail || `Could not upload ${file.name}.`) }
     }
+    event.target.value = ''
   }
-  const images = useMemo(() => assets.filter((asset) => asset.type.startsWith('image/')), [assets])
-  const videos = useMemo(() => assets.filter((asset) => asset.type.startsWith('video/')), [assets])
+  const visitAssets = useMemo(() => patientId && visitId ? assets.filter((asset) => String(asset.patient_id) === String(patientId) && String(asset.visit_id) === String(visitId)) : [], [assets, patientId, visitId])
+  const images = useMemo(() => visitAssets.filter((asset) => (asset.type || '').startsWith('image/')), [visitAssets])
+  const videos = useMemo(() => visitAssets.filter((asset) => (asset.type || '').startsWith('video/')), [visitAssets])
+  useEffect(() => setSelected([]), [patientId, visitId])
   const toggle = (id) => setSelected(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id].slice(-2))
 
   const uploader = <label className="primary-button cursor-pointer"><Upload className="h-4 w-4" />Import files<input className="hidden" type="file" accept="image/*,video/*,.dcm" multiple onChange={addFiles} /></label>
 
   return (
     <Workspace title="Images & DICOM" description="Import, review, compare, annotate, archive and route patient-linked clinical media." actions={uploader}>
-      <Section title="Patient and visit" className="mb-4"><div className="grid gap-3 md:grid-cols-2"><label className="field-label"><span>Patient</span><select className="field-control" value={patientId} onChange={(e)=>{setPatientId(e.target.value);setVisitId('')}}><option value="">Select</option>{patients.map((patient)=><option key={patient.id} value={patient.id}>{patient.patient_id} — {patient.first_name} {patient.last_name}</option>)}</select></label><label className="field-label"><span>Visit</span><select className="field-control" value={visitId} onChange={(e)=>setVisitId(e.target.value)}><option value="">Select</option>{visits.map((visit)=><option key={visit.id} value={visit.id}>{visit.visit_date?new Date(visit.visit_date).toLocaleString():visit.id}</option>)}</select></label></div></Section>
+      {uploadError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{uploadError}</p>}
+      <Section title="Patient and visit" className="mb-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="field-label">
+            <span>Patient</span>
+            <SearchableSelect
+              options={patientOptions}
+              value={patientId}
+              onChange={(val) => { setPatientId(val); setVisitId('') }}
+              placeholder="Select"
+              searchPlaceholder="Search patient ID or name..."
+            />
+          </div>
+          <label className="field-label">
+            <span>Visit</span>
+            <select className="field-control" value={visitId} onChange={(e)=>setVisitId(e.target.value)}>
+              <option value="">Select</option>
+              {visits.map((visit)=><option key={visit.id} value={visit.id}>{visit.visit_date?new Date(visit.visit_date).toLocaleString():visit.id}</option>)}
+            </select>
+          </label>
+        </div>
+      </Section>
       <Tabs items={tabs} value={activeTab} onChange={setActiveTab} />
       {activeTab === 'Images' && <MediaGrid assets={images} selected={selected} toggle={toggle} empty="Import an image or DICOM export to begin." />}
       {activeTab === 'Videos' && <VideoGrid assets={videos} />}
       {activeTab === 'Compare' && <Compare assets={images.filter((asset) => selected.includes(asset.id))} all={images} toggle={toggle} />}
       {activeTab === 'Rule of Three' && <RuleImageTemplate templates={templates} setTemplates={setTemplates} images={images} />}
-      {activeTab === 'Patient data' && <PatientData assets={assets} />}
-      {activeTab === 'Spooler' && <Spooler assets={assets} setAssets={setAssets} />}
+      {activeTab === 'Patient data' && <PatientData assets={visitAssets} />}
+      {activeTab === 'Spooler' && <Spooler assets={visitAssets} setAssets={setAssets} />}
       {activeTab === 'Configuration' && <Section title="DICOM SCU, storage and image/video view configuration"><FieldGrid fields={[{key:'source',label:'Input source',type:'select',options:['DICOM folder','PACS server','Capture device']},{key:'aeTitle',label:'Local AE title'},{key:'host',label:'Local IP address'},{key:'port',label:'Local port',type:'number'},{key:'storageAeTitle',label:'Storage AE title'},{key:'storageHost',label:'Storage IP address'},{key:'storagePort',label:'Storage port',type:'number'},{key:'rows',label:'Viewer rows',type:'select',options:['1','2','3','4']},{key:'columns',label:'Viewer columns',type:'select',options:['1','2','3','4']},{key:'aspectRatio',label:'Image/video aspect ratio',type:'select',options:['Original','4:3','16:9','1:1']},{key:'imageTitle',label:'Image title name'},{key:'autoImport',label:'Auto import',type:'checkbox'},{key:'anonymous',label:'Anonymous images',type:'checkbox'}]} data={config} setData={setConfig} /><button className="primary-button mt-5" onClick={async()=>{const s=await workspaceService.getSettings();await workspaceService.saveSettings({...s.data,imageConfig:config})}}><Save className="h-4 w-4" />Save configuration</button></Section>}
       {activeTab === 'Organ editor' && <OrganEditor image={images.find((asset)=>selected.includes(asset.id))} patientId={patientId} visitId={visitId} onGoToImages={()=>setActiveTab('Images')} onSaved={(asset)=>setAssets((current)=>[...current,asset])} />}
     </Workspace>
@@ -90,7 +129,7 @@ function RuleImageTemplate({templates,setTemplates,images}) {
 }
 
 function Spooler({ assets, setAssets }) {
-  const remove=async(asset)=>{if(asset.id&&!asset.id.startsWith('local-'))await workspaceService.remove('media-records',asset.id);setAssets(assets.filter((item)=>item.id!==asset.id))}
+  const remove=async(asset)=>{if(asset.id&&!String(asset.id).startsWith('local-'))await workspaceService.remove('media-records',asset.id);setAssets((current)=>current.filter((item)=>item.id!==asset.id))}
   return <Section title="Transfer spooler" description="Files queued for the patient record or configured PACS destination."><div className="overflow-auto"><table className="data-table"><thead><tr><th>Patient ID</th><th>Image ID</th><th>AE title</th><th>IP address</th><th>Status</th><th/></tr></thead><tbody>{assets.map((asset)=><tr key={asset.id}><td>{asset.patient_id||'—'}</td><td>{asset.id}</td><td>{asset.ae_title||'—'}</td><td>{asset.ip_address||'—'}</td><td className="text-emerald-700">{asset.status||'Ready'}</td><td><button onClick={()=>remove(asset)} className="rounded p-2 text-red-600"><Trash2 className="h-4 w-4"/></button></td></tr>)}</tbody></table></div>{!assets.length&&<p className="py-10 text-center text-sm text-slate-500">The transfer queue is empty.</p>}</Section>
 }
 

@@ -1,4 +1,7 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import Accounts from './pages/Accounts'
+import { useEffect, useState } from 'react'
+import api from './api/axios'
+import { BrowserRouter as Router, Navigate, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Search from './pages/Search'
@@ -12,76 +15,142 @@ import EditReferralDoctor from './pages/EditReferralDoctor'
 import ClinicalWorkspace from './pages/ClinicalWorkspace'
 import ImagesViewer from './pages/ImagesViewer'
 import Measurements from './pages/Measurements'
-import AIAssistant from './pages/AIAssistant'
 import Reports from './pages/Reports'
-import CRM from './pages/CRM'
 import Analytics from './pages/Analytics'
 import Administration from './pages/Administration'
 import Settings from './pages/Settings'
-import Landing from './pages/Landing'
+import Home from './pages/Home'
+import FetalEchoReport from './pages/FetalEchoReport'
+import AdultEchoReport from './pages/AdultEchoReport'
+import PediatricEchoReport from './pages/PediatricEchoReport'
+import EchoScan from './pages/EchoScan'
+import Profile from './pages/Profile'
+
+function isSignedIn() {
+  return Boolean(
+    sessionStorage.getItem('echoai_user') ||
+    localStorage.getItem('echoai_user') ||
+    localStorage.getItem('echoai_google_access_token'),
+  )
+}
+
+function ProtectedPage({ children }) {
+  const [state, setState] = useState('loading')
+  useEffect(() => { api.get('/auth/me').then(({data}) => {
+    sessionStorage.setItem('echoai_user', JSON.stringify(data.data)); setState('ready')
+  }).catch(() => { sessionStorage.removeItem('echoai_user'); localStorage.removeItem('echoai_user'); setState('signedout') }) }, [])
+  if (state === 'loading') return <p className="p-8">Checking session…</p>
+  if (state === 'signedout') return <Navigate to="/" replace />
+  return <Layout>{children}</Layout>
+}
+
+function LoginRoute() {
+  const searchParams = new URLSearchParams(window.location.search)
+  if (searchParams.get('signout') === '1') {
+    sessionStorage.removeItem('echoai_user')
+    localStorage.removeItem('echoai_user')
+    localStorage.removeItem('echoai_google_access_token')
+    window.history.replaceState({}, document.title, '/')
+    return <Home />
+  }
+
+  return isSignedIn() ? <Navigate to="/dashboard" replace /> : <Home />
+}
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<LoginRoute />} />
+        <Route path="/accounts" element={<ProtectedPage><Accounts /></ProtectedPage>} />
         <Route path="/dashboard" element={
-          <Layout><Dashboard /></Layout>
+          <ProtectedPage><Dashboard /></ProtectedPage>
         } />
         <Route path="/search" element={
-          <Layout><Search /></Layout>
+          <ProtectedPage><Search /></ProtectedPage>
         } />
         <Route path="/new-patient" element={
-          <Layout><NewPatient /></Layout>
+          <ProtectedPage><NewPatient /></ProtectedPage>
         } />
         <Route path="/patients" element={
-          <Layout><Patients /></Layout>
+          <ProtectedPage><Patients /></ProtectedPage>
         } />
         <Route path="/patients/new" element={
-          <Layout><NewPatient /></Layout>
+          <ProtectedPage><NewPatient /></ProtectedPage>
         } />
         <Route path="/patients/:id/edit" element={
-          <Layout><EditPatient /></Layout>
+          <ProtectedPage><EditPatient /></ProtectedPage>
         } />
         <Route path="/visits" element={
-          <Layout><Visits /></Layout>
+          <ProtectedPage><Visits /></ProtectedPage>
         } />
         <Route path="/referral-doctors" element={
-          <Layout><ReferralDoctors /></Layout>
+          <ProtectedPage><ReferralDoctors /></ProtectedPage>
         } />
         <Route path="/referral-doctors/new" element={
-          <Layout><NewReferralDoctor /></Layout>
+          <ProtectedPage><NewReferralDoctor /></ProtectedPage>
         } />
         <Route path="/referral-doctors/edit/:id" element={
-          <Layout><EditReferralDoctor /></Layout>
+          <ProtectedPage><EditReferralDoctor /></ProtectedPage>
         } />
         <Route path="/echo-studies" element={
-          <Layout><ClinicalWorkspace initialType="Adult Echo" /></Layout>
+          <ProtectedPage><ClinicalWorkspace initialType="Adult Echo" /></ProtectedPage>
+        } />
+        <Route path="/fetal-echo-report" element={
+          <ProtectedPage><FetalEchoReport /></ProtectedPage>
+        } />
+        <Route path="/fetal-echo-report/:scanId" element={
+          <ProtectedPage><FetalEchoReport /></ProtectedPage>
+        } />
+        <Route path="/adult-echo-report" element={
+          <ProtectedPage><AdultEchoReport /></ProtectedPage>
+        } />
+        <Route path="/adult-echo-report/:scanId" element={
+          <ProtectedPage><AdultEchoReport /></ProtectedPage>
+        } />
+        <Route path="/pediatric-echo-report" element={
+          <ProtectedPage><PediatricEchoReport /></ProtectedPage>
+        } />
+        <Route path="/pediatric-echo-report/:scanId" element={
+          <ProtectedPage><PediatricEchoReport /></ProtectedPage>
+        } />
+        <Route path="/echo-scan" element={
+          <ProtectedPage><EchoScan /></ProtectedPage>
+        } />
+        <Route path="/echo-scan/:scanId" element={
+          <ProtectedPage><EchoScan /></ProtectedPage>
+        } />
+        <Route path="/ultrasound" element={
+          <ProtectedPage><div className="p-8"><h1 className="text-2xl font-bold">Ultrasound</h1><p className="mt-3 text-slate-600">Reporting template awaiting clinical specification.</p></div></ProtectedPage>
         } />
         <Route path="/images" element={
-          <Layout><ImagesViewer /></Layout>
+          <ProtectedPage><ImagesViewer /></ProtectedPage>
         } />
         <Route path="/measurements" element={
-          <Layout><Measurements /></Layout>
+          <ProtectedPage><Measurements /></ProtectedPage>
         } />
         <Route path="/ai-assistant" element={
-          <Layout><AIAssistant /></Layout>
+          <Navigate to="/dashboard" replace />
         } />
         <Route path="/reports" element={
-          <Layout><Reports /></Layout>
+          <ProtectedPage><Reports /></ProtectedPage>
         } />
         <Route path="/crm" element={
-          <Layout><CRM /></Layout>
+          <Navigate to="/dashboard" replace />
         } />
         <Route path="/analytics" element={
-          <Layout><Analytics /></Layout>
+          <ProtectedPage><Analytics /></ProtectedPage>
         } />
         <Route path="/administration" element={
-          <Layout><Administration /></Layout>
+          <ProtectedPage><Administration /></ProtectedPage>
         } />
         <Route path="/settings" element={
-          <Layout><Settings /></Layout>
+          <ProtectedPage><Settings /></ProtectedPage>
         } />
+        <Route path="/profile" element={
+          <ProtectedPage><Profile /></ProtectedPage>
+        } />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   )

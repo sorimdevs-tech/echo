@@ -1,13 +1,11 @@
 import { Bell, User } from 'lucide-react'
+import EchoLogo from './EchoLogo'
 
 function Header() {
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
-          <p className="text-sm text-gray-500">Welcome to EchoScan Management System</p>
-        </div>
+        <EchoLogo compact />
         
         <div className="flex items-center space-x-4">
           <button className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">

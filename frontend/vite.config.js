@@ -7,8 +7,12 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 3000,
     proxy: {
+      '/uploads': {
+        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8002',
+        changeOrigin: true,
+      },
       '/api': {
-        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8001',
+        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8002',
         changeOrigin: true,
       }
     }
